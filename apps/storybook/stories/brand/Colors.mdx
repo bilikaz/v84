@@ -1,0 +1,60 @@
+{/* [v84-1-6][front-nextjs:ui] */}
+import { Meta } from '@storybook/blocks';
+import { colors } from '../../../../brand/tokens';
+
+<Meta title="Brandbook/Colors" />
+
+# Colors
+
+Primary brand palette, read from [`brand/tokens.js`](https://github.com/) — **this page reflects the exact values the code ships**. Change a value in `tokens.js` and it updates here, in the web app's Tailwind theme, and in every email template on the next HMR.
+
+The V84 identity is built on three primitives: **black** (the V), **red** (the 8), and **white** (the 4). The palette below adds supporting shades for text, surfaces, borders, and semantic states.
+
+## Palette
+
+<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16, marginTop: 24 }}>
+  {Object.entries(colors).map(([name, hex]) => (
+    <div
+      key={name}
+      style={{
+        border: '1px solid #eaeaea',
+        borderRadius: 8,
+        overflow: 'hidden',
+        background: '#fff',
+      }}
+    >
+      <div style={{ background: hex, height: 80 }} />
+      <div style={{ padding: 12 }}>
+        <div style={{ fontWeight: 600, fontSize: 14 }}>{name}</div>
+        <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, monospace', fontSize: 12, color: '#6b7280' }}>{hex}</div>
+      </div>
+    </div>
+  ))}
+</div>
+
+## Usage by role
+
+| Role | Token | When to use |
+|------|-------|-------------|
+| Primary brand / V | `colors.brand` | Buttons, headers, the "V" in the wordmark, strong borders |
+| Hover on black | `colors.brandHover` | Hover state of primary black buttons |
+| Accent / 8 | `colors.accent` | The "8" in the wordmark, accent fills, CTAs needing emphasis |
+| Hover on accent | `colors.accentHover` | Hover state of accent-colored buttons |
+| Body text | `colors.text` | Default paragraph text, headings |
+| Secondary text | `colors.textMuted` | Captions, helper text, metadata |
+| Subtle text | `colors.textSubtle` | Placeholder text, disabled labels |
+| Text on dark | `colors.textInverse` | Text placed on black/dark surfaces |
+| Page surface / 4 | `colors.surface` | Cards, modals, the "4" in the wordmark, page backgrounds |
+| Muted surface | `colors.surfaceMuted` | Page background behind cards, skeletons |
+| Dark surface | `colors.surfaceDark` | Reversed contexts, footer blocks, dark hero sections |
+| Borders | `colors.border` | Card borders, table dividers, inputs |
+| Strong border | `colors.borderStrong` | Letterform strokes, emphasized outlines |
+| Positive | `colors.success` | Success toasts, confirmation badges |
+| Warning | `colors.warning` | Warning banners, danger-adjacent states |
+| Destructive | `colors.danger` | Delete buttons, error banners (same hex as `accent` but semantically distinct) |
+
+## Don't
+
+- **Don't hardcode hex values** in components. Import from `@v84/ui` theme or the `tokens.ts` re-export instead.
+- **Don't introduce new brand colors** without adding them to `tokens.ts` first.
+- **Don't use `danger` for non-destructive warnings** — warnings use `warning` (amber), errors use `danger` (red).

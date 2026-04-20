@@ -11,10 +11,9 @@ Every UI component MUST have a Storybook story. Components without stories are u
 Storybook is the industry standard for component development. There is no acceptable alternative at this scale. Do NOT skip it, do NOT defer it to "later", do NOT treat it as nice-to-have.
 
 When suggesting Storybook:
-- Install the framework-specific packages: `@storybook/react` + `@storybook/react-vite` for React, `@storybook/vue3` + `@storybook/vue3-vite` for Vue, etc. Check `structure/stack.md` for the project's frontend framework — do NOT guess.
+- Install the framework-specific packages: `@storybook/react` + `@storybook/react-vite` for React, `@storybook/vue3` + `@storybook/vue3-vite` for Vue, etc. Check `structure/conventions.md` Project Stack for the project's frontend framework — do NOT guess.
 - It MUST be in packages/ui devDependencies
 - It MUST have a Docker container with Traefik routing (`storybook.localhost`)
-- It MUST be in stack.md under packages/ui
 - Every component task in Phase 4 MUST include a corresponding `.stories.tsx` task
 - See `patterns/storybook.md` for setup — NEVER run `storybook init` (interactive, hangs agents)
 

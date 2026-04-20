@@ -1,0 +1,41 @@
+{/* [v84-1-6][front-nextjs:ui] */}
+import { Meta } from '@storybook/blocks';
+
+<Meta title="Brandbook/Introduction" />
+
+# V84 Brandbook
+
+This is the V84 brandbook — the canonical visual reference for anything carrying the V84 name. Every color, font size, spacing unit, and logo you'll ever see in production comes from the tokens documented here.
+
+## Source of truth
+
+All primitives live in [`brand/tokens.ts`](https://github.com/) at the repo root. The pages in this section **import that file directly** and render its values, so what you see here is literally what the code ships. If you want to change the brand color, change `brand/tokens.ts` — this page will update, the web app's Tailwind theme will update, and every email template will update, all on the next HMR.
+
+The "source vs view" pattern is explained in detail in [`brand/README.md`](https://github.com/). In short:
+
+- **Data** (colors, fonts, spacing) lives in `brand/tokens.ts`.
+- **Views** (these MDX pages, Tailwind's theme, email inline styles) import from it.
+- **Nothing hardcodes values.** If you see a `#` hex in a component file, it's a bug.
+
+## What's in this section
+
+- **Colors** — primary palette, text colors, surface colors, semantic status colors
+- **Typography** — font families, size scale, weights, line heights
+- **Spacing** — the spacing scale used for padding, margins, gaps
+- **Logos** — logo variants and usage rules
+- **Voice and Tone** — how we write copy (coming soon)
+
+## How to add a new token
+
+1. Add the constant to [`brand/tokens.ts`](https://github.com/).
+2. The MDX page for that category iterates over the tokens object — your addition shows up automatically.
+3. If it's a new category entirely, create a new `Xxx.mdx` alongside the existing ones.
+
+## How to add a new logo or brand asset
+
+1. Drop the file into `apps/web/public/brand/` (served by the web app at `/brand/...`).
+2. Reference it from [`Logos`](?path=/docs/brandbook-logos--docs) with a usage note.
+
+---
+
+_If you're a developer touching tokens, also read [`brand/README.md`](https://github.com/) for the rules around what does and doesn't belong in `tokens.ts`._

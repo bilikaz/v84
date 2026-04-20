@@ -1,0 +1,54 @@
+{/* [v84-1-6][front-nextjs:ui] */}
+import { Meta } from '@storybook/blocks';
+import { spacing, radii } from '../../../../brand/tokens';
+
+<Meta title="Brandbook/Spacing" />
+
+# Spacing & Radii
+
+Geometric scale shared across the whole product — padding, margins, gaps, and border radii.
+
+## Spacing scale
+
+<div style={{ display: 'grid', gap: 12, marginTop: 24 }}>
+  {Object.entries(spacing).map(([name, value]) => (
+    <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 16, padding: 12, borderBottom: '1px solid #eaeaea' }}>
+      <div style={{ width: 60, fontFamily: 'ui-monospace, SFMono-Regular, monospace', fontSize: 12, color: '#6b7280' }}>
+        {name}
+      </div>
+      <div style={{ width: 60, fontFamily: 'ui-monospace, SFMono-Regular, monospace', fontSize: 12, color: '#9ca3af' }}>
+        {value}
+      </div>
+      <div style={{ height: 16, background: '#4f46e5', borderRadius: 2, width: value }} />
+    </div>
+  ))}
+</div>
+
+## Border radii
+
+<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 16, marginTop: 24 }}>
+  {Object.entries(radii).map(([name, value]) => (
+    <div key={name} style={{ textAlign: 'center' }}>
+      <div style={{
+        width: 100,
+        height: 100,
+        background: '#eef2ff',
+        border: '2px solid #4f46e5',
+        borderRadius: value,
+        margin: '0 auto 8px',
+      }} />
+      <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, monospace', fontSize: 12, color: '#6b7280' }}>
+        {name}
+      </div>
+      <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, monospace', fontSize: 11, color: '#9ca3af' }}>
+        {value}
+      </div>
+    </div>
+  ))}
+</div>
+
+## Usage
+
+- Use spacing tokens via Tailwind classes (`p-md`, `gap-lg`) or inline (`style={{ padding: spacing.md }}`).
+- Radii: `radii.sm` for inputs and small tags, `radii.md` for buttons, `radii.lg` for cards and modals, `radii.xl` for hero surfaces, `radii.full` for pills and avatars.
+- **Don't invent new values** (`padding: 18px`). If the scale doesn't cover a case, add a new token to `tokens.ts` — that's the forcing function that keeps the scale deliberate.

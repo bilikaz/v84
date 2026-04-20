@@ -26,7 +26,7 @@ Traefik is NOT optional infrastructure — it is a required service in docker-co
 - Each service gets Traefik labels with real domain routing
 
 ### Stack entry
-When Traefik is added, stack.md Project Stack must include:
+When Traefik is added, `structure/conventions.md` Project Stack must include:
 `reverse-proxy ~ Traefik v3.6+ ~ .localhost routing in dev | SSL termination + Let's Encrypt in prod`
 
 ### Tasks generated

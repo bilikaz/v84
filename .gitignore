@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.next
+coverage
+*.tsbuildinfo
+.turbo
+.claude/settings.json
+yyy
+test-results/
+playwright-report/

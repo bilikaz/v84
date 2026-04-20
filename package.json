@@ -1,0 +1,35 @@
+{
+  "name": "v84-raffle",
+  "private": true,
+  "scripts": {
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "pnpm test:up && pnpm test:api && pnpm test:web && pnpm test:e2e && pnpm test:down",
+    "test:up": "docker compose -f docker/test/docker-compose.yml --profile e2e up -d --build --wait",
+    "test:down": "docker compose -f docker/test/docker-compose.yml --profile e2e down -v",
+    "test:api": "docker compose -f docker/test/docker-compose.yml exec -T -w /app/apps/api api pnpm test",
+    "test:web": "pnpm --filter @v84/web test",
+    "test:e2e": "docker compose -f docker/test/docker-compose.yml --profile e2e run --rm e2e",
+    "build": "pnpm -r build",
+    "dev:api": "pnpm --filter @v84/api dev",
+    "dev:web": "pnpm --filter @v84/web dev"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ]
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["bcrypt", "esbuild", "sharp", "@nestjs/core"]
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^8.57.0",
+    "husky": "^9.1.0",
+    "lint-staged": "^15.2.0",
+    "prettier": "^3.3.0",
+    "typescript": "^5.5.0"
+  }
+}

@@ -1,0 +1,90 @@
+{/* [v84-1-6][front-nextjs:ui] */}
+import { Meta } from '@storybook/blocks';
+
+<Meta title="Brandbook/Logos" />
+
+# Logos
+
+V84 has two logos — the **main** logo (white background, black V, red 84) and the **alt** logo (red background, black V, white 84). Everything else is a variation of these two. Files live in [`brand/logos/`](https://github.com/) and are served by Storybook at `/brand/logos/*.svg` via `staticDirs` in `apps/storybook/.storybook/main.ts`.
+
+Both logos share the same geometry: a rounded square badge, a capital **V** centered-left, and a smaller **84** (roughly half the V's height) tucked into the bottom-right. The V and 84 each carry a soft drop shadow.
+
+## Main logo
+
+The default on light surfaces. Use this everywhere unless you have a specific reason not to — navigation headers, login screens, documents, stationery, favicons.
+
+<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
+  <div style={{ padding: 32, background: '#f6f6f6', borderRadius: 8, textAlign: 'center' }}>
+    <img src="/brand/logos/logo.svg" alt="V84 main logo on light surface" style={{ width: 160, height: 160 }} />
+    <div style={{ marginTop: 12, fontSize: 13, color: '#6b7280' }}>On light surface</div>
+  </div>
+  <div style={{ padding: 32, background: '#111111', borderRadius: 8, textAlign: 'center' }}>
+    <img src="/brand/logos/logo.svg" alt="V84 main logo on dark surface" style={{ width: 160, height: 160 }} />
+    <div style={{ marginTop: 12, fontSize: 13, color: '#9ca3af' }}>On dark surface</div>
+  </div>
+</div>
+
+| Path | `brand/logos/logo.svg` |
+|---|---|
+| Background | White (`colors.surface`) with a thin black outline |
+| V | Black (`colors.brand`) |
+| 84 | Red (`colors.accent`), ½ the V's height |
+| Use on | Default — anywhere the surface is light or neutral |
+
+## Alt logo
+
+The loud, high-contrast variant. Use when the main logo would get lost (busy backgrounds, marketing collateral, stickers, splash screens) or when the moment calls for more presence.
+
+<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
+  <div style={{ padding: 32, background: '#f6f6f6', borderRadius: 8, textAlign: 'center' }}>
+    <img src="/brand/logos/logo-alt.svg" alt="V84 alt logo on light surface" style={{ width: 160, height: 160 }} />
+    <div style={{ marginTop: 12, fontSize: 13, color: '#6b7280' }}>On light surface</div>
+  </div>
+  <div style={{ padding: 32, background: '#111111', borderRadius: 8, textAlign: 'center' }}>
+    <img src="/brand/logos/logo-alt.svg" alt="V84 alt logo on dark surface" style={{ width: 160, height: 160 }} />
+    <div style={{ marginTop: 12, fontSize: 13, color: '#9ca3af' }}>On dark surface</div>
+  </div>
+</div>
+
+| Path | `brand/logos/logo-alt.svg` |
+|---|---|
+| Background | Red (`colors.accent`) |
+| V | Black (`colors.brand`) |
+| 84 | White (`colors.surface`), ½ the V's height |
+| Use on | Marketing, promotional material, busy photography, stickers, splash screens |
+
+## Clear space
+
+Maintain clear space around the logo equal to roughly ¼ of the badge's height. Don't crowd it with copy, borders, or container edges tighter than that.
+
+## Don't
+
+- **Don't invent new color combinations.** Those two files are the brand — no other treatments.
+- **Don't recolor** the V, the 84, or the background individually.
+- **Don't stretch or distort.** Scale proportionally.
+- **Don't remove the shadow** — the soft drop shadow is part of the identity.
+- **Don't remove the black outline** on the main logo — it's what keeps the badge visible on white surfaces.
+
+## Why SVG (and what about email)?
+
+SVG is perfect for the web but **unreliable in email clients** (Gmail strips it, Outlook rasterizes poorly). For anything shipping in an email, export a PNG variant at 2× display size into `apps/web/public/brand/email/` and reference it via `${WEB_URL}/brand/email/logo.png`. See [Brandbook/Introduction](?path=/docs/brandbook-introduction--docs) for the asset URL helper pattern.
+
+## Using the logo in a web component
+
+```tsx
+// Web — served by Next.js from apps/web/public/brand/ (after you copy / symlink)
+<img src="/brand/logos/logo.svg" alt="V84" />
+```
+
+## Using the logo in an email template
+
+```tsx
+import { Img } from '@react-email/components';
+
+const assetUrl = (path: string) =>
+  `${process.env.EMAIL_ASSET_URL ?? process.env.WEB_URL}/brand/email/${path}`;
+
+<Img src={assetUrl('logo.png')} width="128" alt="V84" />
+```
+
+The `EMAIL_ASSET_URL` fallback means today the images are served by the Next.js web app; swap to a CDN later by setting `EMAIL_ASSET_URL` without touching template code.

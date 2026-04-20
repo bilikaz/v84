@@ -1,0 +1,24 @@
+{
+  "name": "brand",
+  "private": true,
+  "main": "./tokens.cjs",
+  "module": "./tokens.mjs",
+  "types": "./tokens.d.ts",
+  "exports": {
+    ".": {
+      "types": "./tokens.d.ts",
+      "import": "./tokens.mjs",
+      "require": "./tokens.cjs"
+    },
+    "./tokens": {
+      "types": "./tokens.d.ts",
+      "import": "./tokens.mjs",
+      "require": "./tokens.cjs"
+    },
+    "./copy": {
+      "types": "./copy.d.ts",
+      "import": "./copy.mjs",
+      "require": "./copy.cjs"
+    }
+  }
+}

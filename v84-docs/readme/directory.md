@@ -1,0 +1,154 @@
+# Directory Layout
+
+```
+v84-docs/
+├── readme.md                       ← Quick start and overview
+├── readme/
+│   ├── pipeline.md                 ← Step-by-step execution order
+│   ├── running-scripts.md          ← Run the pipeline via bash
+│   ├── agents-guide.md             ← Agent architecture, context files, conventions
+│   └── directory.md                ← You are here
+│
+├── structure/
+│   ├── roles.md                    ← Roles, active topics
+│   ├── conventions.md              ← Shared project rules
+│   ├── conventions/                ← Role-specific + executor conventions
+│   │   ├── back-nestjs.md
+│   │   ├── front-nextjs.md
+│   │   ├── ops.md
+│   │   ├── reviewer.md
+│   │   └── executor.md             ← code patterns, tagging rules
+│   ├── suggestions.md              ← Index of init-time tech suggestions
+│   ├── suggestions/                ← Per-tech suggestion sheets (mariadb, nextjs, …)
+│   └── example/                    ← Permanent reference for init step
+│
+├── agents/
+│   ├── architect/                   ← script-invoked only; skills are self-contained
+│   │   └── skills/
+│   │       ├── plan-inline.md      ← decompose into iteration plan
+│   │       └── review-inline.md    ← validate leads, cross-role check
+│   ├── executor/                    ← the only user-facing agent
+│   │   ├── agent.md
+│   │   └── skills/
+│   │       ├── init.md             ← first-run guided project setup
+│   │       ├── run.md              ← pipeline driver; state check + script dispatch
+│   │       └── execute.md          ← implement tasks top-to-bottom
+│   └── shared/
+│       └── skills/
+│           ├── draft-inline.md     ← topic agent draft
+│           ├── lead-review-inline.md  ← per-role lead review
+│           └── patch-inline.md     ← apply corrections
+│
+├── context/                        ← bundled per-agent inputs (always regenerated)
+│   ├── architect/
+│   │   └── packages.md
+│   ├── executor/
+│   │   └── packages.md
+│   ├── back-nestjs/
+│   │   ├── packages.md
+│   │   ├── topics.md               ← active topics summary
+│   │   ├── api/
+│   │   │   ├── identity.md         ← composed role+topic identity
+│   │   │   └── corrections.md      ← (only during patch rounds)
+│   │   ├── entities/
+│   │   ├── services/
+│   │   └── …                       ← one folder per active topic
+│   ├── front-nextjs/…
+│   ├── ops/…
+│   └── reviewer/…
+│
+├── scripts/
+│   ├── build-context.sh            ← rebuild context/ from state
+│   ├── generate-trees.sh           ← tagged-only source trees
+│   ├── generate-missing.sh         ← plan-vs-code drift report → plan/missing.md
+│   ├── llm-api.sh                  ← shared API caller (sourced, not run)
+│   │
+│   ├── architect/                  ← plan + review (single LLM call)
+│   │   ├── call.sh
+│   │   ├── parse.sh
+│   │   └── run.sh                  ← orchestrates call + parse
+│   ├── agents/                     ← per-topic LLM calls (parallel)
+│   │   ├── call.sh
+│   │   ├── parse.sh
+│   │   └── run.sh                  ← draft or patch, all active topics
+│   ├── leads/                      ← per-role lead review (parallel)
+│   │   ├── call.sh
+│   │   ├── parse.sh
+│   │   └── run.sh
+│   ├── cycle/                      ← patch → lead → architect loop to APPROVED
+│   │   ├── run.sh
+│   │   └── log.sh
+│   └── executor/
+│       ├── extract.sh              ← plan/{n}/{role}/*.md → plan/{n}/tasks.md
+│       ├── run.sh                  ← stub — executor runs via Claude Code / SDK
+│       └── finish.sh               ← promote plan/{n}/ → final/, commit
+│
+├── trees/                          ← generated from [v84-*] tags in source
+│   ├── back-nestjs.tree
+│   ├── front-nextjs.tree
+│   ├── ops.tree
+│   ├── reviewer.tree               ← sees everything
+│   └── full.tree
+│
+├── final/                          ← cumulative history (only finish.sh writes here)
+│   ├── plan.md                     ← appended plan narrative per iteration
+│   ├── back-nestjs/
+│   │   ├── api.md
+│   │   ├── entities.md
+│   │   ├── services.md
+│   │   └── …
+│   ├── front-nextjs/…
+│   ├── ops/…
+│   └── reviewer/…
+│
+└── plan/
+    ├── ideas.md                    ← future iteration concepts
+    ├── missing.md                  ← generated by scripts/generate-missing.sh
+    ├── {n}.md                      ← architect's narrative plan
+    └── {n}/                        ← working directory for this iteration
+        ├── {role}/
+        │   ├── {topic}.md          ← topic agent draft (working area)
+        │   └── lead.md             ← lead review output (per role)
+        ├── raw/                    ← full LLM responses (audit trail)
+        │   ├── {role}:{topic}.md
+        │   ├── {role}:lead.md
+        │   └── architect:review.md
+        ├── logs/                   ← cycle/run.sh round-by-round logs
+        ├── corrections-verdict.md  ← architect's KEEP/DROP per lead note
+        ├── corrections.md          ← merged corrections ready for next patch round
+        ├── decisions.md            ← durable architect decisions (appended)
+        ├── approved.md             ← created when architect has nothing to add
+        ├── missing-report.md       ← per-iteration drift snapshot
+        └── tasks.md                ← regenerated by executor/extract.sh
+```
+
+## Key path patterns
+
+- **Plan drafts:** `plan/{n}/{role}/{topic}.md` (nested by role)
+- **Lead reviews:** `plan/{n}/{role}/lead.md`
+- **Raw LLM:** `plan/{n}/raw/{role}:{topic}.md` (colon-separated; audit trail)
+- **Final history:** `final/{role}/{topic}.md` (nested; never flat)
+- **Context:** `context/{role}/{topic}/identity.md` + `context/{role}/packages.md`
+
+## Trees
+
+Trees come from code tags — only files with a `[v84-*]` comment appear. Agents see only their role's tree, so they can't reason about files that don't exist yet.
+
+- `scripts/generate-trees.sh` — tagged-only view per role + `full.tree`
+
+## Missing report
+
+`scripts/generate-missing.sh` produces `plan/missing.md` (or `plan/{n}/missing.md` when called with an iteration). It emits four drift buckets:
+
+1. **Exists but not tagged** (per iteration) — plan file is already on disk; the executor just needs to add its `[v84-*][role:topic]` tag.
+2. **Missing on disk** (per iteration) — plan references a path that doesn't exist (typos, renames, placeholders, or invented paths).
+3. **Missing from plans** — `[v84-*]`-tagged source files that no plan references (usually support wiring or plan-coverage gaps).
+4. **Untagged source files** — files in the executor's target folders (`apps/`, `docker/`, `e2e/`, `brand/`) that carry no `[v84-*]` tag at all.
+
+Run it any time to check drift between plans and code. Bucket 1 is the quick-wins list; bucket 4 tends to be the iter-N-not-yet-planned list.
+
+## Dev Credentials
+
+After running seeds (`pnpm seed`):
+- Email: `{role}@{role}.localhost`
+- Password: `password`
