@@ -1,6 +1,7 @@
 node_modules
 dist
 .env
+!docker/test/.env
 .next
 coverage
 *.tsbuildinfo
