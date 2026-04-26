@@ -1,0 +1,85 @@
+# Role: Backend
+#
+# One role definition. At project init, this file is copied into
+# <project>/v84/structure/roles/backend.yaml and can be edited to fit
+# the project's actual shape.
+#
+# See readme/roles.md for the broader role model.
+
+name: backend
+title: Backend
+
+when_activate: |
+  Project has server-side code — REST/GraphQL API, background
+  workers, internal services, or any logic running on a server
+  (not in a browser or mobile device). Activate for any project
+  with a meaningful server layer.
+
+responsibilities: |
+  Server-side application code. API controllers, DTOs, domain
+  services, business logic, ORM entities, background workers,
+  authentication and authorisation, server-side validation.
+
+reviewers:
+
+  - name: entities
+    title: Entities & data model
+    responsibilities: |
+      ORM entity shapes, relations, cardinality, indexes (at the
+      app level), column types, nullability, default values,
+      lightweight migration logic.
+    challenge: |
+      Is the data model right? Do the relations reflect real
+      invariants? Will queries that need to be fast actually be
+      fast?
+    catches:
+      - Missing indexes on FK or frequently filtered columns
+      - Nullable columns that should be NOT NULL
+      - Denormalisation that should have been normalised (or vice versa)
+      - Implicit cascades that will surprise on delete
+
+  - name: services
+    title: Services & business logic
+    responsibilities: |
+      Domain service methods, orchestration between entities,
+      transactional boundaries, domain rules, business-level
+      validation, calculation logic.
+    challenge: |
+      Is the business logic right? Are edge cases covered? Does
+      the service respect domain invariants?
+    catches:
+      - Missing transaction boundaries on multi-entity writes
+      - Race conditions on concurrent updates
+      - Edge cases in domain rules (off-by-one, boundary conditions)
+      - Validation that should be domain-level but is only schema-level
+
+  - name: api
+    title: API surface & contract
+    responsibilities: |
+      REST/GraphQL endpoints, DTO shape, status codes, error
+      responses, OpenAPI/schema correctness, versioning,
+      pagination, filtering, sorting conventions.
+    challenge: |
+      Is the external contract right? Is it ergonomic,
+      consistent, versioned, and documented?
+    catches:
+      - Inconsistent error response shape across endpoints
+      - Missing pagination on list endpoints
+      - Breaking changes disguised as non-breaking
+      - Endpoint that returns 200 but should return 201 / 204 / 404
+
+  - name: security
+    title: Security & trust boundaries
+    responsibilities: |
+      Authentication, authorisation, input validation at trust
+      boundaries, secret handling, session management, audit
+      logging, injection prevention, PII handling.
+    challenge: |
+      Where can this be attacked? What trust is being assumed
+      that shouldn't be?
+    catches:
+      - Missing authorisation checks on endpoints
+      - Secrets stored in plaintext or logged
+      - SQL/NoSQL injection vectors
+      - Privilege escalation paths
+      - Session fixation, token replay, timing oracles

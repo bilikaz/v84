@@ -1,3 +1,0 @@
-[v84-1-6]#1 EmailLayout shared template + story
-  task: Create `EmailLayout` React component at apps/api/src/templates/emails/EmailLayout.tsx — the brand-aware shared shell that every transactional email wraps (logo, header, footer, spacing tokens). Imports colors/typography/spacing from the sibling `theme.ts` re-export. Colocated Storybook story in `EmailLayout.stories.tsx`. No business content — iteration 3 adds the first real email templates (VerificationEmail, WelcomeEmail, PasswordResetEmail) that slot their bodies into this layout.
-  files: apps/api/src/templates/emails/EmailLayout.tsx, apps/api/src/templates/emails/EmailLayout.stories.tsx

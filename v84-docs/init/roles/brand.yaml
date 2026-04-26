@@ -1,0 +1,91 @@
+# Role: Brand
+#
+# One role definition. At project init, this file is copied into
+# <project>/v84/structure/roles/brand.yaml and can be edited to fit
+# the project's actual shape.
+#
+# See readme/roles.md for the broader role model.
+#
+# Note: Brand is pervasive. Every role producing user-facing output
+# reads brand conventions at the top of their prompt. Brand's writer
+# owns the rules; other roles apply them.
+
+name: brand
+title: Brand
+
+when_activate: |
+  Project has user-facing surfaces with brand identity — a
+  product, a marketing site, a customer-facing app, emails to
+  users. Activate whenever strings, visuals, or tone reach an
+  end user. Skip for purely internal tools where no brand
+  voice exists.
+
+responsibilities: |
+  Cross-surface branding — visual system, voice and tone, copy,
+  consistency across web, mobile, email, marketing. Brand is
+  pervasive; every other role reads brand conventions when
+  producing anything user-facing.
+
+reviewers:
+
+  - name: visual
+    title: Visual system
+    responsibilities: |
+      Design tokens (colour, typography, spacing, radii,
+      elevation), iconography, imagery, layout grids, brand
+      marks, logo usage rules.
+    challenge: |
+      Does the surface follow the visual system? Are tokens
+      used, or are values hard-coded? Do branded marks appear
+      correctly?
+    catches:
+      - Hard-coded colours/fonts bypassing tokens
+      - Logo used at wrong size, wrong variant, wrong background
+      - Custom icons instead of the icon library
+      - Spacing that breaks the grid rhythm
+
+  - name: voice
+    title: Voice & tone
+    responsibilities: |
+      Brand voice rules, tone by context (error vs success vs
+      marketing), persona, vocabulary (allowed/banned terms),
+      rhythm and cadence of communication.
+    challenge: |
+      Does this sound like our brand speaking? Is the tone
+      matched to the context?
+    catches:
+      - Error messages that blame the user ("You did X wrong")
+      - Marketing copy that sounds like product docs (or vice versa)
+      - Banned vocabulary slipping through
+      - Inconsistent persona across surfaces
+
+  - name: copy
+    title: Copy
+    responsibilities: |
+      Actual product strings — microcopy, button labels, empty
+      states, error messages, notifications, email subject lines,
+      onboarding text. The literal words users read.
+    challenge: |
+      Is this string right? Clear, concise, voice-appropriate,
+      and addressing the user's actual moment?
+    catches:
+      - '"Something went wrong" placeholder that should be specific'
+      - Button labels that don't match the action ("Submit" vs "Pay $49")
+      - Jargon leaking into user-facing text
+      - Empty states that are truly empty (no helpful next step)
+
+  - name: consistency
+    title: Cross-surface consistency
+    responsibilities: |
+      Cross-surface alignment — does the welcome email match
+      the first-session onboarding? Does the mobile push copy
+      match the web notification? Does the marketing site use
+      the same primary CTA verb as the app?
+    challenge: |
+      Are we saying the same thing the same way everywhere?
+      Does a user's journey feel like one brand speaking?
+    catches:
+      - Marketing promises feature X; product calls it feature Y
+      - Email notification tone diverges from in-app tone
+      - Mobile and web use different names for the same action
+      - Legal / ToS language diverges from product surface language

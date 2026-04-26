@@ -1,0 +1,25 @@
+# Stack template: Mobile
+#
+# Fields the suggest-stack agent fills in for the mobile role.
+# See stack/backend.yaml for the field-shape convention.
+
+platform:
+  description: Cross-platform framework or native targets.
+  example: React Native, Flutter, native iOS+Android
+
+language:
+  description: Source language for app code.
+  example: TypeScript, Dart, Swift+Kotlin
+
+navigation:
+  description: Routing / navigation library.
+  example: React Navigation, GoRouter
+
+state:
+  description: App state management approach.
+  example: Zustand, Riverpod, MobX
+  optional: true
+
+storage:
+  description: Local persistence layer.
+  example: MMKV, Hive, SQLite via WatermelonDB

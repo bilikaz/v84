@@ -1,0 +1,94 @@
+# Role: Integrations
+#
+# One role definition. At project init, this file is copied into
+# <project>/v84/structure/roles/integrations.yaml and can be edited
+# to fit the project's actual shape.
+#
+# See readme/roles.md for the broader role model.
+
+name: integrations
+title: Integrations
+
+when_activate: |
+  Activate only when integrating with a COMPLEX multi-module
+  external system (ERP, EHR, accounting platform, mainframe
+  connector) — 100+ calls, multi-step flows, vendor with its
+  own data model.
+
+  Do NOT activate for Stripe, SendGrid, Slack-webhook-level
+  integrations — those live in backend.api and backend.security.
+
+  Heuristic: "would this integration warrant its own dedicated
+  engineer if it were staffed?" If yes → role. If no → backend.
+
+  Can be activated WITHOUT backend — e.g. when the integration
+  service is a standalone microservice communicating with the
+  rest of the system via queues or a shared database.
+
+responsibilities: |
+  Deep integrations with external systems that behave as
+  co-equal systems. Entity mapping between our domain and
+  theirs, multi-step orchestration, state synchronisation,
+  failure handling at scale.
+
+reviewers:
+
+  - name: contracts
+    title: Contracts & mappings
+    responsibilities: |
+      Vendor data models, field-level mappings, schema drift
+      detection, API versioning, translation tables between
+      our domain and theirs.
+    challenge: |
+      Is the translation between our domain and theirs correct
+      and maintained? What happens when they ship v4?
+    catches:
+      - Silent field-meaning change on vendor upgrade
+      - Enum values diverging over time
+      - Missing fields we'll need later
+      - Ambiguous translation on nullable/optional fields
+
+  - name: flows
+    title: Flows & orchestration
+    responsibilities: |
+      Multi-step workflows, sagas, compensating transactions,
+      rollback semantics, idempotency keys, state machines
+      spanning both systems.
+    challenge: |
+      If step 7 of 12 fails, what state are we in, and how do
+      we recover? Is orchestration resilient to partial failure?
+    catches:
+      - Saga with no compensation path
+      - Steps not idempotent, retry creates duplicates
+      - State machine that can stall in an undefined state
+      - Rollback that only rolls back our side, not theirs
+
+  - name: resilience
+    title: Resilience
+    responsibilities: |
+      Retries, timeouts, circuit breakers, dead-letter queues,
+      backoff strategy, rate-limit respect, bulkheads, failure
+      reconciliation jobs.
+    challenge: |
+      Which of the 100 calls can fail partially, and what's
+      our response to each failure class?
+    catches:
+      - Retry without idempotency key
+      - No circuit breaker, cascading failure on vendor outage
+      - Dead-letter queue with no reconciliation job
+      - Backoff that's too aggressive and gets us rate-limited
+
+  - name: sync
+    title: Sync & reconciliation
+    responsibilities: |
+      State reconciliation, drift detection, scheduled
+      backfills, consistency guarantees, event ordering,
+      eventual-consistency windows.
+    challenge: |
+      How do we know our view of their state is still correct?
+      What happens when they drift?
+    catches:
+      - No periodic reconciliation, drift undetected for weeks
+      - Event ordering assumed but not enforced
+      - Backfill that can't resume from a checkpoint
+      - Consistency window undocumented, surprises consumers

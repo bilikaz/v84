@@ -1,0 +1,27 @@
+# Stack template: Data
+#
+# Fields the suggest-stack agent fills in for the data role.
+# See stack/backend.yaml for the field-shape convention.
+
+primary:
+  description: Operational database engine + version.
+  example: Postgres 16, MySQL 8, SQLite
+
+query_language:
+  description: Query / transformation language.
+  example: SQL, dbt SQL, KQL
+
+cache:
+  description: In-memory cache layer.
+  example: Redis 7, Memcached
+  optional: true
+
+warehouse:
+  description: Analytics / BI warehouse engine.
+  example: BigQuery, Snowflake, DuckDB
+  optional: true
+
+pipeline:
+  description: ETL / ELT orchestration tool.
+  example: Airflow, dbt + cron, Dagster
+  optional: true

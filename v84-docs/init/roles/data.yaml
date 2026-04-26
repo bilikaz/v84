@@ -1,0 +1,92 @@
+# Role: Data
+#
+# One role definition. At project init, this file is copied into
+# <project>/v84/structure/roles/data.yaml and can be edited to fit
+# the project's actual shape.
+#
+# See readme/roles.md for the broader role model.
+
+name: data
+title: Data
+
+when_activate: |
+  Project has either (a) real database-resident logic — stored
+  procedures, materialised views, partitioning, replication,
+  heavy SQL that goes beyond ORM capabilities; or (b) a serious
+  analytics/BI pipeline — warehouse, dbt, dashboards, metrics as
+  first-class deliverables.
+
+  Typical CRUD apps do NOT activate Data — their DB needs are
+  covered by backend.entities.
+
+  Can be activated WITHOUT backend — e.g. pure data research,
+  analytics-only pipelines, BI-first projects where the
+  warehouse IS the product.
+
+responsibilities: |
+  Database-native logic (stored procedures, views, functions,
+  triggers), schema at the physical level, analytical pipelines
+  (ETL/ELT), warehouse models, metrics definitions, BI surfaces.
+
+reviewers:
+
+  - name: schema
+    title: Schema
+    responsibilities: |
+      Physical schema — tables, columns, types, constraints,
+      partitioning, materialised views, stored procedures,
+      functions, triggers. Both OLTP and OLAP structures.
+    challenge: |
+      Is the structure right? Constraints that enforce real
+      invariants? Partitioning that matches access patterns?
+    catches:
+      - Column types too wide (VARCHAR(255) everywhere)
+      - Missing constraints letting invalid state persist
+      - Partitioning scheme misaligned with query patterns
+      - Stored procedures hiding critical logic from app review
+
+  - name: queries
+    title: Queries & performance
+    responsibilities: |
+      Query performance, execution plans, index design, n+1
+      detection, join strategy, slow-query review, query
+      optimisation, analytical query cost.
+    challenge: |
+      Will this query perform? Are indexes placed where they're
+      needed? Is the plan what we expect?
+    catches:
+      - Query that does a full table scan on a hot path
+      - Index defined but not used (plan ignores it)
+      - N+1 patterns that accumulate with scale
+      - Join order that forces a large intermediate result
+      - Analytical query costing 10x what it should
+
+  - name: migrations
+    title: Migrations
+    responsibilities: |
+      Schema change safety, reversibility, downtime
+      implications, locking behaviour, online-vs-offline
+      migrations, data backfills, warehouse schema versioning.
+    challenge: |
+      Can this migration run in production safely? Is it
+      reversible? Will it lock a critical table?
+    catches:
+      - ALTER that locks a large table at peak
+      - Backfill that runs as one transaction and OOMs
+      - Irreversible migration without snapshot backup
+      - Column drop that breaks in-flight requests
+
+  - name: analytics
+    title: Analytics & BI
+    responsibilities: |
+      Data warehouse structure, ELT pipelines, dbt models,
+      metric definitions, BI dashboards, event tracking, data
+      quality monitors, data freshness SLAs.
+    challenge: |
+      Are metrics defined correctly and consistently? Do
+      pipelines produce trustworthy data?
+    catches:
+      - Two dashboards showing different numbers for "MAU"
+      - Pipeline that silently drops rows on parse failure
+      - Metric definition that doesn't survive a schema change
+      - Data freshness SLAs unstated or unmet

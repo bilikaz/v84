@@ -1,0 +1,24 @@
+# Stack template: Testing
+#
+# Fields the suggest-stack agent fills in for the testing role.
+# See stack/backend.yaml for the field-shape convention.
+
+unit:
+  description: Unit / component test framework.
+  example: Vitest, Jest, pytest
+  optional: true
+
+api:
+  description: API / integration test framework.
+  example: supertest, pytest + httpx
+  optional: true
+
+e2e:
+  description: End-to-end / browser test framework.
+  example: Playwright, Cypress
+  optional: true
+
+load:
+  description: Load / performance test tool.
+  example: k6, Locust, JMeter
+  optional: true

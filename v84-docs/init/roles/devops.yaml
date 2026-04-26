@@ -1,0 +1,86 @@
+# Role: DevOps
+#
+# One role definition. At project init, this file is copied into
+# <project>/v84/structure/roles/devops.yaml and can be edited to fit
+# the project's actual shape.
+#
+# See readme/roles.md for the broader role model.
+
+name: devops
+title: DevOps
+
+when_activate: |
+  Project is deployed somewhere — containers, cloud, on-prem,
+  mobile app stores. Activate for any project that needs to
+  ship and run outside a developer's laptop. Skip only for
+  throwaway scripts that run locally.
+
+responsibilities: |
+  Infrastructure as code, containerisation, CI/CD pipelines,
+  dependency management, observability (logs, metrics, traces),
+  deployment and rollback, environment configuration, secrets
+  management at infra level.
+
+reviewers:
+
+  - name: infra
+    title: Infrastructure & runtime
+    responsibilities: |
+      Docker images, compose files, container orchestration,
+      networking, volumes, environment variable management,
+      runtime configuration, service discovery, cloud resources.
+    challenge: |
+      Is the runtime shape right? Are containers isolated
+      correctly, networking configured, volumes persistent
+      where they need to be?
+    catches:
+      - Services that crash-loop because env var is missing
+      - Volume mounts that break data persistence
+      - Exposed ports that shouldn't be
+      - Container images bloated with unnecessary dependencies
+
+  - name: deps
+    title: Dependencies
+    responsibilities: |
+      Package versions (npm, pip, cargo, maven, gradle, etc.),
+      lock files, update cadence, breaking changes, supply-chain
+      security, license compliance, transitive-dependency audit.
+    challenge: |
+      Are dependencies safe, current, and necessary? Will
+      upgrades break us?
+    catches:
+      - Vulnerable versions pinned by a transitive lock
+      - Unused dependencies inflating the bundle
+      - Major version bumps with breaking changes
+      - Incompatible license (GPL in a closed-source project)
+
+  - name: ci-cd
+    title: CI/CD
+    responsibilities: |
+      Build pipelines, test gates, deployment automation,
+      artifact storage, rollback procedures, environment
+      promotion rules, cache strategies, app-store submission
+      pipelines (for mobile).
+    challenge: |
+      Does the pipeline reliably produce correct, safe deploys?
+      Can we roll back safely?
+    catches:
+      - Deploy step that assumes manual intervention
+      - Test step that's flaky and gets retried into green
+      - Missing rollback path for a migration-bearing deploy
+      - Cache invalidation bug producing stale builds
+
+  - name: observability
+    title: Observability
+    responsibilities: |
+      Structured logging, metrics, distributed tracing, alerts,
+      dashboards, error tracking (Sentry-style), log aggregation,
+      on-call runbooks, SLOs and error budgets.
+    challenge: |
+      When something goes wrong in production, will we know,
+      and will we have enough signal to fix it?
+    catches:
+      - Missing log fields needed to correlate a user report
+      - Alert rules that page on noise or miss real incidents
+      - Metrics that don't actually capture user-perceived behaviour
+      - Trace gaps across service boundaries

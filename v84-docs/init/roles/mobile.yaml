@@ -1,0 +1,96 @@
+# Role: Mobile
+#
+# One role definition. At project init, this file is copied into
+# <project>/v84/structure/roles/mobile.yaml and can be edited to fit
+# the project's actual shape.
+#
+# See readme/roles.md for the broader role model.
+
+name: mobile
+title: Mobile
+
+when_activate: |
+  Project ships a native or cross-platform mobile app (iOS,
+  Android, React Native, Flutter, native SwiftUI/Jetpack
+  Compose). Activate whether or not a backend exists — mobile
+  can be fully standalone (offline app, on-device ML, utility).
+  Do NOT activate for responsive-web-only projects.
+
+responsibilities: |
+  Complete mobile application — UI screens and navigation,
+  business logic and state, local persistence, authentication
+  and secure storage. Treated as a full standalone entity, not
+  a client on top of a backend.
+
+reviewers:
+
+  - name: ui-ux
+    title: UI & UX
+    responsibilities: |
+      Screens, navigation, components, interactions, animations,
+      gestures, haptics, keyboard handling, safe areas, platform
+      conventions (iOS vs Android), accessibility on mobile
+      (VoiceOver/TalkBack, dynamic type, contrast).
+    challenge: |
+      Does this feel native and delightful on each platform?
+      Are flows, interactions, and a11y right?
+    catches:
+      - Non-native navigation that breaks back-button semantics
+      - Keyboard pushing content off-screen
+      - Missing pull-to-refresh / swipe gestures users expect
+      - iOS/Android divergence in UX (same action, different flow)
+      - Missing VoiceOver labels, dynamic type support
+
+  - name: services
+    title: Services & state
+    responsibilities: |
+      Business logic, state management, networking, API clients,
+      offline/sync handling, background tasks, push notification
+      delivery, deep link routing, retry and backoff on transient
+      failures.
+    challenge: |
+      Is the app's logic and state correct, including when the
+      network is slow, gone, or flapping?
+    catches:
+      - Lost local writes on reconnect
+      - Stale cache after sync
+      - Missing retry on transient failures
+      - Optimistic UI that never rolls back on failure
+      - Silent push handling bugs
+      - Deep link that works warm but crashes cold-launched app
+
+  - name: entities
+    title: Entities & local persistence
+    responsibilities: |
+      Local data models (Realm / SQLite / Core Data / Room),
+      schema and local migrations, sync state, conflict
+      resolution on reconnect, queued writes, local indexes,
+      storage footprint.
+    challenge: |
+      Is local data structured and migrated correctly? Do
+      offline and online states reconcile predictably?
+    catches:
+      - Schema migration that breaks existing installs
+      - Sync conflict resolved to the wrong side
+      - Lost attachments on reinstall
+      - Missing indexes on local queries
+      - Unbounded local storage growth
+
+  - name: security
+    title: Security
+    responsibilities: |
+      Auth flows (including OAuth/SSO native flows), secure
+      storage (Keychain/Keystore), biometrics (Face ID / Touch
+      ID / fingerprint), permission requests, network security
+      (TLS, certificate pinning), jailbreak/root detection where
+      relevant, PII on device, app backgrounding (hide sensitive
+      UI on app switcher).
+    challenge: |
+      Where can this app be attacked — on-device, in-flight,
+      or at rest?
+    catches:
+      - Tokens in plaintext UserDefaults / SharedPreferences
+      - Permissions requested up-front without context
+      - Missing cert pinning on sensitive calls
+      - Biometric bypass on background/foreground transitions
+      - PII visible in the app switcher preview

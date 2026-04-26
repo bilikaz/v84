@@ -1,0 +1,32 @@
+# Stack template: Frontend
+#
+# Fields the suggest-stack agent fills in for the frontend role.
+# See stack/backend.yaml for the field-shape convention.
+
+language:
+  description: Source language for the client code.
+  example: TypeScript, JavaScript, HTML/CSS
+
+build:
+  description: Build / dev tooling for the browser bundle.
+  example: Vite 5, Next.js 15, plain script tags
+  optional: true
+
+framework:
+  description: UI framework — omit for vanilla HTML/JS.
+  example: React 18, Vue 3, Svelte 5
+  optional: true
+
+ui:
+  description: UI primitive / component library.
+  example: Radix, Material UI, shadcn
+  optional: true
+
+state:
+  description: App-wide state management approach.
+  example: Zustand, Redux Toolkit, component-local
+  optional: true
+
+styling:
+  description: Styling approach.
+  example: Tailwind 3, CSS Modules, plain CSS

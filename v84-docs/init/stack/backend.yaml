@@ -1,0 +1,33 @@
+# Stack template: Backend
+#
+# Fields the suggest-stack agent fills in for the backend role.
+# Each field has a description (what the field means), an example
+# (concrete picks the model can imitate), and an optional flag.
+# Required by default; mark `optional: true` to allow omission.
+
+language:
+  description: Primary language for server code.
+  example: TypeScript, Python, Go
+
+runtime:
+  description: Process runtime + version.
+  example: Node.js 22 LTS, Python 3.12
+
+framework:
+  description: Web framework or HTTP router.
+  example: NestJS, FastAPI, Gin
+
+orm:
+  description: ORM or query builder over the primary database.
+  example: Prisma, SQLAlchemy, sqlc
+  optional: true
+
+validation:
+  description: Request and payload validation library.
+  example: Zod, Pydantic v2, ozzo-validation
+  optional: true
+
+auth:
+  description: How clients authenticate against the API.
+  example: JWT + Passport, OAuth via Auth0, session cookies
+  optional: true

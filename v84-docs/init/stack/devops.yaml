@@ -1,0 +1,28 @@
+# Stack template: DevOps
+#
+# Fields the suggest-stack agent fills in for the devops role.
+# See stack/backend.yaml for the field-shape convention.
+
+containers:
+  description: Containerisation approach.
+  example: Docker + docker compose, distroless, bare metal
+
+deployment:
+  description: Where the workload runs in production.
+  example: Vercel, AWS ECS, fly.io, on-prem k8s
+  optional: true
+
+ci_cd:
+  description: CI/CD platform.
+  example: GitHub Actions, GitLab CI, CircleCI
+  optional: true
+
+iac:
+  description: Infrastructure-as-code tool.
+  example: Terraform, Pulumi, plain shell
+  optional: true
+
+observability:
+  description: Logging, metrics, and tracing stack.
+  example: Sentry, OTel + Grafana, Datadog
+  optional: true

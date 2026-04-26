@@ -1,0 +1,90 @@
+# Role: Testing
+#
+# One role definition. At project init, this file is copied into
+# <project>/v84/structure/roles/testing.yaml and can be edited to fit
+# the project's actual shape.
+#
+# See readme/roles.md for the broader role model.
+#
+# Note: Testing covers the test suite itself. Security of production
+# code is owned by each production role's own security reviewer
+# (backend.security, mobile.security, etc.). There is no separate
+# "testing security" concept — tests don't have their own security
+# surface.
+
+name: testing
+title: Testing
+
+when_activate: |
+  Project is expected to survive beyond a prototype — any code
+  that will be maintained, run in production, or handed to
+  other developers. Activate for virtually all serious projects.
+  Skip only for one-shot scripts and throwaway experiments.
+
+responsibilities: |
+  The test suite — unit tests, integration tests, end-to-end
+  tests, fixtures, test data, test infrastructure, coverage
+  discipline.
+
+reviewers:
+
+  - name: unit
+    title: Unit tests
+    responsibilities: |
+      Smallest-scale tests — pure functions, isolated units,
+      fast, deterministic, no I/O. Assertions on return values
+      and side effects within the unit.
+    challenge: |
+      Are unit tests at the right level? Do they test behaviour
+      or implementation? Are assertions precise?
+    catches:
+      - Tests that mock everything and only verify the mocks ran
+      - Over-specified tests that break on refactors
+      - Under-specified tests that would pass with broken code
+      - Tests at the wrong level (should be integration)
+
+  - name: integration
+    title: Integration tests
+    responsibilities: |
+      Service-to-service tests with real dependencies (real DB,
+      real cache, real message queue where feasible). Contract
+      tests between internal services.
+    challenge: |
+      Do services actually work together? Is the test using real
+      dependencies or faking its way through?
+    catches:
+      - Integration test that mocks the DB (defeats the purpose)
+      - Missing contract tests at service boundaries
+      - Setup/teardown that leaks state between tests
+      - Tests that pass against stubs but fail in staging
+
+  - name: e2e
+    title: End-to-end tests
+    responsibilities: |
+      Full user journey tests — Playwright/Cypress for web,
+      Detox for mobile, real browser or device, real backend,
+      real data flows. Cover the golden paths and critical
+      edge cases.
+    challenge: |
+      Does the full system work from the user's perspective?
+      Are flaky tests handled, not masked?
+    catches:
+      - Missing coverage of a critical journey (login, purchase)
+      - Flakes treated as "re-run until green" rather than fixed
+      - E2E tests doing unit-level work (too granular, too slow)
+      - Selectors tied to implementation details
+
+  - name: quality
+    title: Test suite quality
+    responsibilities: |
+      Test suite health as a whole — flakiness rate, coverage
+      gaps, fixture quality, fragility patterns, test run time,
+      fixture data realism, coverage of failure paths.
+    challenge: |
+      Is the test suite itself trustworthy? Would a failing
+      test here actually signal a real problem?
+    catches:
+      - Flaky tests accumulating and being retried into green
+      - Coverage dropping silently as code grows
+      - Fixtures that don't reflect production data shapes
+      - Tests that assert nothing beyond "it didn't throw"

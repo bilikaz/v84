@@ -1,0 +1,88 @@
+# Role: Frontend
+#
+# One role definition. At project init, this file is copied into
+# <project>/v84/structure/roles/frontend.yaml and can be edited to fit
+# the project's actual shape.
+#
+# See readme/roles.md for the broader role model.
+
+name: frontend
+title: Frontend
+
+when_activate: |
+  Project has a web-based client surface — SPA, SSR web app,
+  PWA, marketing site, admin panel, browser extension. Activate
+  whether or not Backend is activated; a frontend can talk to
+  third-party APIs directly and doesn't require an own backend.
+
+responsibilities: |
+  Client-side web application code. Page components, routing,
+  reusable UI primitives, forms, client-side state, API client
+  wrappers, session storage, real-time subscriptions.
+
+reviewers:
+
+  - name: primitives
+    title: UI primitives & design system
+    responsibilities: |
+      Reusable UI building blocks — Button, Input, Card, Badge,
+      Modal, Toast. Token usage (colour, spacing, typography),
+      variant APIs, Storybook stories, prop ergonomics.
+    challenge: |
+      Are the atoms right? Are they reusable, consistent with
+      the design system, and usable by other frontend code?
+    catches:
+      - Hard-coded colours/spacing instead of tokens
+      - Component API that leaks implementation details
+      - Missing variants (loading, disabled, error states)
+      - Storybook story coverage gaps
+
+  - name: pages
+    title: Pages & composition
+    responsibilities: |
+      Page components, routing, layouts, auth gates, navigation,
+      flow continuity, loading/error states at the page level,
+      SEO metadata, redirects, accessibility at the page level.
+    challenge: |
+      Is the composition right? Do flows work end-to-end? Are
+      auth gates, loading states, and a11y in place?
+    catches:
+      - Missing auth gate on a protected route
+      - Broken redirect after login/logout
+      - Missing loading state during async fetches
+      - Layout shift during page transitions
+      - Missing error boundary at the page level
+      - a11y gaps at page level (focus management, heading order)
+
+  - name: services
+    title: Client services & state
+    responsibilities: |
+      Client-side logic — hooks, state management, caching
+      (React Query / SWR / Zustand / etc.), optimistic updates,
+      derived state, client-side form handling.
+    challenge: |
+      Is the client-side logic right? Is state consistent? Are
+      async states handled correctly?
+    catches:
+      - Stale cache after mutation
+      - Race conditions on concurrent fetches
+      - Missing optimistic rollback on failure
+      - State leakage between pages / users / tabs
+
+  - name: api-boundary
+    title: API boundary
+    responsibilities: |
+      The frontend's boundary to any HTTP API (whether our own
+      backend, a BFF layer, or a third-party). API route handlers
+      in app/api/*, session cookies, CSRF, fetch wrappers, auth
+      token lifecycle, request/response shape mapping.
+    challenge: |
+      Is the boundary safe and clean? Are cookies, sessions, and
+      API fetch patterns secure? Is the frontend adding value at
+      this layer or just forwarding noise?
+    catches:
+      - Cookie flags missing (HttpOnly, SameSite, Secure)
+      - Session tokens exposed to client JS
+      - CSRF gaps in state-changing operations
+      - BFF/proxy layer that just blindly forwards (defeats purpose)
+      - API error responses not mapped to user-friendly frontend state
