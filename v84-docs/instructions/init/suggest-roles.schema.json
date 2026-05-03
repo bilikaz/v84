@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["roles", "summary"],
+  "description": "Proposed active-role list for the project plus a short summary.",
+  "properties": {
+    "roles": {
+      "type": "array",
+      "description": "Role-tags from the menu. At least one surface role required (typically backend, frontend, mobile, or data).",
+      "items": {"type": "string"}
+    },
+    "summary": {
+      "type": "string",
+      "description": "2–4 sentences describing the overall shape of this project and why these roles were picked together."
+    }
+  },
+  "examples": [
+    {
+      "title": "Proposed role list with summary",
+      "example": {
+        "roles": ["backend", "frontend", "devops", "testing"],
+        "summary": "Standard web app: React SPA, REST API, containerised deploy. Backend serves user data and business logic; frontend renders the UI; devops handles compose and CI; testing covers unit and integration. No mobile, no heavy data analytics — normal CRUD plus auth is the scope."
+      }
+    }
+  ]
+}

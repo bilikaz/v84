@@ -1,0 +1,85 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "description": "Either a recursive sub-task list (Shape A) or clarifying questions (Shape B). Pick exactly one — the other field MUST be an empty array.",
+  "required": ["tasks", "questions"],
+  "properties": {
+    "tasks": {
+      "type": "array",
+      "description": "Shape A: ordered sub-tasks decomposing the parent. Empty array when emitting questions instead.",
+      "items": {"$ref": "#/$defs/task"}
+    },
+    "questions": {
+      "type": "array",
+      "description": "Shape B: clarifying questions when the parent is structurally ambiguous. Empty array when emitting tasks instead.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question", "suggestions"],
+        "properties": {
+          "question": {"type": "string"},
+          "suggestions": {
+            "type": "array",
+            "description": "2–4 short options describing distinct choices, concrete enough that picking one is unambiguous.",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task", "tasks"],
+      "properties": {
+        "task": {
+          "type": "string",
+          "description": "Plain prose — user-facing outcome first, constraints worth flagging after. No code, no framework names, no headings."
+        },
+        "tasks": {
+          "type": "array",
+          "description": "Optional deeper sub-tasks when the sub-task has internal phases worth naming. Empty array when none.",
+          "items": {"$ref": "#/$defs/task"}
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Decomposing into sub-tasks (the common case)",
+      "example": {
+        "tasks": [
+          {
+            "task": "Stand up the responsive page shell so every later layer has somewhere to render. Centre the canvas and lock its aspect ratio.",
+            "tasks": []
+          },
+          {
+            "task": "Render the atmospheric layer (sun, clouds, ambient drift) as the static backdrop for the scene.",
+            "tasks": [
+              {"task": "Define colour and timing tokens for the atmosphere.", "tasks": []},
+              {"task": "Wire the cloud drift loop and respect reduced-motion.", "tasks": []}
+            ]
+          }
+        ],
+        "questions": []
+      }
+    },
+    {
+      "title": "Asking clarifying questions (the parent is structurally ambiguous)",
+      "example": {
+        "tasks": [],
+        "questions": [
+          {
+            "question": "Should the scene support light and dark modes, or pick one and ship that?",
+            "suggestions": [
+              "Light only for this iteration; revisit dark in a later cycle.",
+              "Both modes via prefers-color-scheme detection.",
+              "Both modes plus an in-page toggle the user controls."
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

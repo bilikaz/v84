@@ -1,0 +1,49 @@
+{
+  "type": "object",
+  "required": ["summary"],
+  "description": "Top level: one key per role-tag from the field menu, plus `summary`. Each role's value is a mapping of field-tag → {recommendation, alternatives}.",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "3–5 sentences on overall stack shape and any trade-offs worth flagging."
+    }
+  },
+  "additionalProperties": {
+    "type": "object",
+    "description": "One role's stack picks — keys are field-tags from the role's stack template.",
+    "additionalProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recommendation", "alternatives"],
+      "properties": {
+        "recommendation": {
+          "type": "string",
+          "description": "The single best fit for this brief. For optional fields, may be the literal string `none`."
+        },
+        "alternatives": {
+          "type": "array",
+          "description": "2–4 other viable picks the user could swap in.",
+          "items": {"type": "string"}
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Stack picks for a web app",
+      "example": {
+        "backend": {
+          "language": {"recommendation": "Python", "alternatives": ["TypeScript", "Go"]},
+          "framework": {"recommendation": "FastAPI 0.115", "alternatives": ["Flask 3", "Litestar"]},
+          "orm": {"recommendation": "SQLAlchemy 2", "alternatives": ["Tortoise ORM", "raw SQL with psycopg"]}
+        },
+        "devops": {
+          "containers": {"recommendation": "Docker + docker compose", "alternatives": ["distroless", "none"]},
+          "deployment": {"recommendation": "fly.io", "alternatives": ["Railway", "AWS App Runner"]},
+          "iac": {"recommendation": "none", "alternatives": ["Terraform", "Pulumi"]}
+        },
+        "summary": "Boring Python stack on a low-ops host. Skipped IaC because scale does not justify it yet. Alternatives listed in case the user disagrees."
+      }
+    }
+  ]
+}

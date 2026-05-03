@@ -31,14 +31,14 @@ from typing import Any, Optional
 import yaml
 
 from core.stage import Stage
-from ui import Spinner, checklist
+from ui import checklist
 from core.util import (
     default_log_dir,
-    instruction_path,
+    load_instruction,
     project_v84_dir,
     v84_docs_root,
 )
-from llm import LLMConfig, call
+from llm import LLMConfig, call_json
 
 
 # No tools exposed — the UI step handles all the user interaction.
@@ -119,10 +119,7 @@ def _propose_roles(
         summary    AI's summary of the project shape + proposal reasoning
                    (empty string when the instruction doesn't request one)
     """
-    skill_file = instruction_path("init", "suggest-roles.md")
-    if not skill_file.exists():
-        raise FileNotFoundError(f"Instruction not found: {skill_file}")
-    system = skill_file.read_text(encoding="utf-8")
+    system, schema = load_instruction("init", "suggest-roles")
 
     # Compact menu — title + role_tag + when_activate text per role.
     # Reviewer definitions, responsibilities, and writer charters are
@@ -133,67 +130,42 @@ def _propose_roles(
     user_msgs = [
         f"## Project brief\n\n{brief}",
         f"## Role menu\n\n{role_menu}",
-        "Propose which roles apply. Follow your output format exactly.",
+        "Propose which roles apply.",
     ]
 
-    with Spinner(f"calling {cfg.model} @ {cfg.url}"):
-        response = call(
-            cfg,
-            system=system,
-            user_msgs=user_msgs,
-            log_name="init-propose-roles",
-            log_dir=default_log_dir(),
-            # max_tokens=4096
-        )
+    response = call_json(
+        cfg,
+        system=system,
+        user_msgs=user_msgs,
+        response_schema=schema,
+        log_name="init-propose-roles",
+        log_dir=default_log_dir(),
+    )
 
     return _parse_proposal(response)
 
 
-def _parse_proposal(yaml_text: str) -> tuple[list[str], str]:
-    """Parse the LLM's proposed roles YAML into (role tags, summary).
-
-    Expected shape (from instructions/init/suggest-roles.md):
-        roles:
-          - backend
-          - frontend
+def _parse_proposal(data: dict) -> tuple[list[str], str]:
+    """Pull (role tags, summary) from the schema-validated response.
 
     Hallucinated role tags (anything not matching a file in
-    init/roles/) are filtered out. `summary` is optional — older
-    instructions emitted one; current instruction does not. Returns
-    empty string when absent.
+    init/roles/) are filtered out — the schema is open on string
+    contents, so a free-form value would still validate.
     """
-    try:
-        data = yaml.safe_load(yaml_text) or {}
-    except yaml.YAMLError as exc:
-        raise RuntimeError(f"LLM output was not valid YAML: {exc}") from exc
-
     if not isinstance(data, dict):
-        raise RuntimeError("LLM output did not parse as a YAML mapping")
+        raise RuntimeError("LLM roles response was not a mapping")
 
-    # Accept either `roles:` (current) or `proposed_active:` (legacy)
-    # as the list key — one-way-door deprecation, models occasionally
-    # fall back to wording from their training data.
-    raw_list = data.get("roles") or data.get("proposed_active") or []
+    raw_list = data.get("roles") or []
 
     proposed: list[str] = []
     for entry in raw_list:
-        # Accept bare strings (current shape) OR dicts with a `name:`
-        # key (defensive against model drift).
-        if isinstance(entry, str):
-            name = entry
-        elif isinstance(entry, dict):
-            name = entry.get("name")
-        else:
-            continue
-        if isinstance(name, str) and name not in proposed:
-            proposed.append(name)
+        if isinstance(entry, str) and entry and entry not in proposed:
+            proposed.append(entry)
 
     # Filter hallucinated names against the actual template files.
     valid = set(list_role_names())
     proposed = [n for n in proposed if n in valid]
 
-    # Summary is optional. Kept for backward compat + for later
-    # instructions that may bring it back as an explicit field.
     summary = (data.get("summary") or "").strip()
 
     return proposed, summary

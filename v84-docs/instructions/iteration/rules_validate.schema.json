@@ -1,0 +1,53 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rules"],
+  "description": "Per-lead vote on architect-proposed global rules during the rules_aggregate stage. Single-veto applies — any reject from any active role's lead bars the global from binding this iteration. The lead checks fit with the role's stack and reality, drift against root-promoted rules, and coherence against the role's own pending rules from rules_lead.",
+  "properties": {
+    "rules": {
+      "type": "array",
+      "description": "One vote per pending architect global. Vote on every entry; skipping is not a vote.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "verdict"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The pending global's id, copied verbatim."
+          },
+          "verdict": {
+            "enum": ["accept", "reject"]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required when verdict=reject. One short line naming the concrete conflict — cite the conflicting root rule id, your role's pending rule id, or the stack reality that prevents honoring the global."
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Mixed verdicts — accepts most, rejects one for drift, one for stack reality, one for incomplete promotion",
+      "example": {
+        "rules": [
+          {"id": "v84-1.architect.rule.1", "verdict": "accept"},
+          {"id": "v84-1.architect.rule.2", "verdict": "accept"},
+          {"id": "v84-1.architect.rule.3", "verdict": "reject", "reason": "Conflicts with root rule v84-0.global.rule.4 — that rule requires UUIDv7 ids project-wide, the proposed global mandates CUIDs."},
+          {"id": "v84-1.architect.rule.4", "verdict": "reject", "reason": "Backend uses an async job queue by design; a 'all writes are synchronous' global cannot be honored without rewriting the queue layer."},
+          {"id": "v84-1.architect.rule.5", "verdict": "reject", "reason": "promotes_from cites v84-1.backend.lead.rule.7 (logging context shape), but the global only describes log levels — it does not cover the structured context fields the lead rule mandates."}
+        ]
+      }
+    },
+    {
+      "title": "All accepts — clean run with no conflicts",
+      "example": {
+        "rules": [
+          {"id": "v84-1.architect.rule.1", "verdict": "accept"},
+          {"id": "v84-1.architect.rule.2", "verdict": "accept"}
+        ]
+      }
+    }
+  ]
+}

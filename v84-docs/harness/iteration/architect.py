@@ -1,63 +1,70 @@
 """
-architect.py — Iteration architect stage (single cross-role call).
+architect.py — Iteration architect stage (parallel raise + verdict).
 
 Once every active role has its lead output (corrections + accepted
-conv/dec), one architect call reads everything cross-role and
-emits:
+rules), the architect fires TWO LLM calls in parallel — both see
+the same pre-vote disk state — then applies the outputs in two
+phases:
 
-    - verdict: approved | continue
-    - cross-role corrections (suggestion shape, optional `for_role`)
-    - rejected_corrections — ids from any lead's corrections file
-      that the architect overrides
-    - proposed global conventions (architect-authored, scope=global)
-    - proposed global decisions (architect-authored)
+    1. Raise call (architect.md). Cross-role corrections + global
+       rule proposals + ids of lead corrections to override. The
+       architect's view of what is missing or broken across roles.
+
+    2. Verdict call (lead_validate.md). Rejection-only ballot
+       over role-scoped rules that landed accepted in this
+       iteration's lead_round (reviewer-raised rules the lead
+       accepted + lead-raised rules that auto-accepted). Silence
+       means the lead's authority stands; reject only when there
+       is a concrete cross-role break.
+
+Two-phase write applies the verdicts first (Phase A — flip
+rejected lead rules + retract their synthetic apply-corrections),
+then the raises (Phase B — append cross-role corrections to each
+role's pending file, move rejected lead corrections, write
+proposed globals as pending).
 
 Outputs:
 
-    iterations/<n>/<role>.corrections.yaml
+    iterations/<n>/<role>.corrections-pending.yaml
         — architect's cross-role corrections appended per role
           (id `v84-<n>.architect.c.<m>`; role inferred from
-          `action_id` prefix or `for_role`)
+          `action_id` prefix or `for_role`). architect_validate
+          fans out to each affected role's lead to vote
+          accept/reject; accepted entries land in
+          `<role>.corrections.yaml`, rejected in
+          `<role>.corrections-rejected.yaml`.
     iterations/<n>/<role>.corrections-rejected.yaml
         — lead corrections the architect overrides; moved here
-          from `<role>.corrections.yaml` with `rejected_by: architect`
-    iterations/<n>/global.conventions.yaml
-        — pending architect-proposed global conventions
-    iterations/<n>/global.decisions.yaml
-        — pending architect-proposed global decisions
+          from `<role>.corrections.yaml` with `rejected_by: architect`.
+    iterations/<n>/<role>.rules.yaml
+        — lead-rule status flipped from accepted → rejected for
+          every entry the verdict call named, with rejected_by:
+          architect and rejection_reason recorded. The matching
+          synthetic `<rule_id>.apply` correction is also retracted
+          from the role's corrections.yaml so patch doesn't carry
+          a now-rejected rule forward.
+    iterations/<n>/global.rules.yaml
+        — pending architect-proposed global rules.
 
 No separate `architect.yaml` is written — whether the iteration
-continues or closes is decided by the validate stage from the
+continues or closes is decided by architect_validate from the
 on-disk corrections count and recorded in `status.yaml`.
 
-No fan-out — single LLM call. Multi-tier still used so the call
-goes to the architect tier when configured.
+Two-call fan-out via call_many; the multi tier is used when
+configured (else single).
 """
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any, Optional
 
-import yaml
-
 from core import coreyaml, iter_status, proposals
-from core.context import (
-    active_roles,
-    conventions_block,
-    decisions_block,
-    plan_block,
-    project_layout_block,
-    rejected_conventions_block,
-    rejected_decisions_block,
-    roles_block,
-    stack_block,
-)
+from core.context import active_roles, build_user_msgs
 from core.stage import Stage
-from core.util import default_log_dir, instruction_path
-from llm import LLMConfig, call, resolve_llm
-from ui import Spinner
+from core.util import default_log_dir, load_instruction
+from llm import CallSpec, LLMConfig, call_many, resolve_llm
+from ui import spinner
 
 
 def architect(
@@ -66,7 +73,7 @@ def architect(
     *,
     cfg: Optional[LLMConfig] = None,
 ) -> Path:
-    """Run the iteration's architect call."""
+    """Run the iteration's architect stage — parallel raise + verdict."""
     if cfg is None:
         raise ValueError("LLMConfig required — call via v84.py or pass cfg=")
 
@@ -91,167 +98,161 @@ def architect(
     if not roles:
         raise RuntimeError("no active roles in profile.yaml")
 
-    # Architect runs on the multi tier when configured, else single.
-    arch_cfg = _arch_cfg(project_dir, fallback=cfg)
+    # Both calls run on the multi tier when configured, else single.
+    fan_cfg = _arch_cfg(project_dir, fallback=cfg)
 
-    skill_file = instruction_path("iteration", "architect.md")
-    if not skill_file.exists():
-        raise FileNotFoundError(f"Instruction not found: {skill_file}")
-    system = skill_file.read_text(encoding="utf-8")
+    raise_system,   raise_schema   = load_instruction("iteration", "architect")
+    verdict_system, verdict_schema = load_instruction("iteration", "lead_validate")
 
-    user_msgs = _build_user_msgs(
-        project_dir=project_dir,
-        roles=roles,
-        iteration_n=iteration_n,
-        parent=parent,
+    # Both calls see the SAME pre-vote disk state. The verdict call's
+    # bundle includes per-role accepted rules (the items it votes on);
+    # the raise call's bundle is identical so cross-role concerns can
+    # cite the same rule set without drift between halves.
+    raise_msgs = build_user_msgs(
+        project_dir, parent, iteration_n,
+        {
+            "plan":                          True,
+            "active_roles":                  True,
+            "stack":                         "all",
+            "layout":                        ["global"],
+            "role_definition":               "all",
+            "history":                       None,
+            "actions":                       "all",
+            "corrections":                   "all",
+            "corrections_pending":           None,
+            "corrections_rejected":          "all",
+            "corrections_applied":           None,
+            "corrections_rejected_history":  None,
+            "rules":                         ["global"] + roles,
+            "rules_pending":                 None,
+            "rules_rejected":                ["global"],
+            "trailing": "Synthesise across roles.",
+        },
     )
 
-    print(f"  architecting iteration {iteration_n} — model {arch_cfg.model} "
-          f"@ {arch_cfg.url}",
-          file=sys.stderr)
-    with Spinner(f"calling {arch_cfg.model} @ {arch_cfg.url}"):
-        response = call(
-            arch_cfg,
-            system=system,
-            user_msgs=user_msgs,
-            log_name=f"iter-{iteration_n}-architect",
-            log_dir=default_log_dir(),
+    verdict_msgs = build_user_msgs(
+        project_dir, parent, iteration_n,
+        {
+            "plan":                          True,
+            "active_roles":                  True,
+            "stack":                         "all",
+            "layout":                        ["global"],
+            "role_definition":               "all",
+            "history":                       None,
+            "actions":                       "all",
+            "corrections":                   "all",
+            "corrections_pending":           None,
+            "corrections_rejected":          "all",
+            "corrections_applied":           None,
+            "corrections_rejected_history":  None,
+            "rules":                         ["global"] + roles,
+            "rules_pending":                 None,
+            "rules_rejected":                ["global"],
+            "trailing": (
+                "Vote rejection-only on role-scoped rules that landed "
+                "accepted in this iteration. Silence is the common case — "
+                "leads' authority stands by default."
+            ),
+        },
+    )
+
+    # Skip the verdict call when there's nothing in scope to vote on
+    # — no lead-blessed pending corrections (non-architect ids) and
+    # no pending or accepted role rules across any active role.
+    has_verdict_scope = _has_lead_validate_scope(
+        project_dir, iteration_n, roles,
+    )
+
+    specs: list[CallSpec] = [
+        CallSpec(
+            system=raise_system,
+            user_msgs=raise_msgs,
+            response_schema=raise_schema,
+            log_name=f"iter-{iteration_n}-architect-raise",
+        ),
+    ]
+    kinds: list[str] = ["raise"]
+    if has_verdict_scope:
+        specs.append(CallSpec(
+            system=verdict_system,
+            user_msgs=verdict_msgs,
+            response_schema=verdict_schema,
+            log_name=f"iter-{iteration_n}-architect-verdict",
+        ))
+        kinds.append("verdict")
+
+    if has_verdict_scope:
+        spinner.log(
+            f"  architecting iteration {iteration_n} — raise + verdict "
+            f"in parallel — model {fan_cfg.model} @ {fan_cfg.url}"
+        )
+    else:
+        spinner.log(
+            f"  architecting iteration {iteration_n} — raise only "
+            f"(nothing in scope for verdict) — model {fan_cfg.model} "
+            f"@ {fan_cfg.url}"
+        )
+    results = call_many(fan_cfg, specs, log_dir=default_log_dir())
+
+    raise_response: dict = {}
+    verdict_response: dict = {}
+    failed: list[tuple[str, str]] = []
+    for kind, result in zip(kinds, results):
+        if result.error is not None:
+            failed.append((kind, repr(result.error)))
+            continue
+        if kind == "raise":
+            raise_response = result.response or {}
+        else:
+            verdict_response = result.response or {}
+
+    if failed:
+        for kind, err in failed:
+            spinner.log(f"  ✗ architect.{kind}: {err}")
+        raise RuntimeError(
+            f"architect failed: {len(failed)} call(s) — re-run to retry"
         )
 
+    # Phase A — apply lead_validate verdicts on lead corrections and
+    # role-scoped rules in scope. Lead-raised pending items transition
+    # to accepted (corrections.yaml + synth apply-correction for rules)
+    # or rejected; reviewer-source items already accepted by the lead
+    # stay binding on accept and move to rejected on reject.
+    correction_verdicts = _norm_correction_verdicts(verdict_response)
+    rule_verdicts = _norm_rule_verdicts(verdict_response)
+    parent_task_id = parent_id
+
+    if correction_verdicts:
+        _apply_lead_correction_verdicts(
+            project_dir=project_dir,
+            iteration_n=iteration_n,
+            roles=roles,
+            verdicts=correction_verdicts,
+        )
+    if rule_verdicts:
+        _apply_lead_rule_verdicts(
+            project_dir=project_dir,
+            iteration_n=iteration_n,
+            roles=roles,
+            verdicts=rule_verdicts,
+            parent_task_id=parent_task_id,
+        )
+
+    # Phase B — apply raises: cross-role corrections + global proposals.
     _persist_architect_output(
         iter_dir=iter_dir,
         iteration_n=iteration_n,
         roles=roles,
-        raw_response=response,
+        response=raise_response,
         project_dir=project_dir,
     )
-    # Validate decides whether the cycle continues or ends — architect
-    # just hands off. If validate finds corrections to apply, round++
-    # and patch starts the new cycle; otherwise next_step=user_review.
-    iter_status.advance_to(project_dir, iteration_n, "validate")
+
+    # architect_validate decides whether the cycle continues or ends —
+    # architect just hands off. If it finds corrections to apply,
+    # round++ and patch starts the new cycle; otherwise next_step=
+    # user_review.
+    iter_status.advance_to(project_dir, iteration_n, "architect_validate")
     return iter_dir
-
-
-# -----------------------------------------------------------------------------
-# Context builder
-# -----------------------------------------------------------------------------
-
-def _build_user_msgs(
-    *,
-    project_dir: Path,
-    roles: list[str],
-    iteration_n: int,
-    parent: dict,
-) -> list[str]:
-    """Multi-message context for the architect call."""
-    msgs: list[str] = [
-        f"## Iteration plan\n\n{plan_block(parent)}",
-        f"## Active roles\n\n{', '.join(roles)}",
-        f"## Stack (full)\n\n{stack_block(project_dir, roles=roles)}",
-    ]
-    layout = project_layout_block(project_dir).strip()
-    if layout:
-        msgs.append(f"## Repo layout (all roles)\n\n{layout}")
-
-    iter_dir = project_dir / "v84" / "iterations" / str(iteration_n)
-
-    for role in roles:
-        bundle = _role_bundle(iter_dir, role, project_dir, iteration_n)
-        msgs.append(f"## Role bundle: {role}\n\n{bundle}")
-
-    # Active globals — same context.conventions_block helper every
-    # other layer uses. role=None so only globals appear (not the
-    # role-scoped accepted from iteration role files, which are
-    # already included in each role bundle above).
-    conv = conventions_block(project_dir, role=None).strip()
-    if conv:
-        msgs.append(f"## Active global conventions\n\n{conv}")
-    dec = decisions_block(project_dir, role=None).strip()
-    if dec:
-        msgs.append(f"## Active global decisions\n\n{dec}")
-
-    # Rejected globals from earlier rounds — surfaced with their
-    # rejection reasons so the architect doesn't re-propose ideas
-    # that leads have already shot down. Empty on round 1.
-    rej_conv = rejected_conventions_block(project_dir, role=None).strip()
-    if rej_conv:
-        msgs.append(
-            "## Global conventions rejected this iteration\n\n"
-            "These global proposals were rejected by lead validation. "
-            "Don't re-propose them in this form. If you still believe "
-            "the underlying concern is real, address the rejection "
-            "reason in your reworded proposal — or drop the idea.\n\n"
-            f"{rej_conv}"
-        )
-    rej_dec = rejected_decisions_block(project_dir, role=None).strip()
-    if rej_dec:
-        msgs.append(
-            "## Global decisions rejected this iteration\n\n"
-            "Same rule as rejected conventions — don't re-propose "
-            "without addressing the recorded reason.\n\n"
-            f"{rej_dec}"
-        )
-
-    msgs.append(
-        "Synthesise across roles. Follow your output format exactly."
-    )
-    return msgs
-
-
-def _role_bundle(
-    iter_dir: Path, role: str, project_dir: Path, iteration_n: int,
-) -> str:
-    """Render every artefact the architect needs for one role."""
-    sections: list[str] = []
-
-    draft_file = iter_dir / f"{role}.yaml"
-    if draft_file.exists():
-        sections.append(
-            f"### writer draft (`{role}.yaml`)\n\n"
-            f"```yaml\n{draft_file.read_text(encoding='utf-8').strip()}\n```"
-        )
-
-    corr = proposals.read_corrections(project_dir, iteration_n, role)
-    if corr:
-        sections.append(
-            f"### lead corrections (`{role}.corrections.yaml`)\n\n"
-            f"```yaml\n{_dump(corr).rstrip()}\n```"
-        )
-
-    rejected = proposals.read_rejected_corrections(project_dir, iteration_n, role)
-    if rejected:
-        sections.append(
-            f"### lead rejected corrections (`{role}.corrections-rejected.yaml`)\n\n"
-            f"```yaml\n{_dump(rejected).rstrip()}\n```"
-        )
-
-    accepted_c = proposals.accepted_conventions(project_dir, iteration_n, role)
-    if accepted_c:
-        sections.append(
-            f"### accepted role conventions (this iteration)\n\n"
-            f"```yaml\n{_dump(accepted_c).rstrip()}\n```"
-        )
-
-    accepted_d = proposals.accepted_decisions(project_dir, iteration_n, role)
-    if accepted_d:
-        sections.append(
-            f"### accepted role decisions (this iteration)\n\n"
-            f"```yaml\n{_dump(accepted_d).rstrip()}\n```"
-        )
-
-    if not sections:
-        return "(no artefacts present for this role)"
-    return "\n\n".join(sections)
-
-
-def _dump(data: Any) -> str:
-    return yaml.safe_dump(
-        data,
-        default_flow_style=False,
-        sort_keys=False,
-        allow_unicode=True,
-        width=10000,
-    )
 
 
 # -----------------------------------------------------------------------------
@@ -263,29 +264,23 @@ def _persist_architect_output(
     iter_dir: Path,
     iteration_n: int,
     roles: list[str],
-    raw_response: str,
+    response: dict,
     project_dir: Path,
 ) -> bool:
-    """Persist all architect outputs and return whether another round
-    is needed (any corrections, rejections, or proposals emitted)."""
-    parsed = _parse(raw_response)
+    """Persist architect raise outputs (cross-role corrections + global
+    rule proposals) and return whether another round is needed.
+    Lead-correction rejections + lead-rule rejections come from the
+    parallel verdict call and are applied separately in Phase A."""
+    parsed = _parse(response)
 
-    # Verdict is derived from emitted content: anything that requires
-    # the writers to patch (own corrections, rejected lead corrections
-    # that leave gaps, new global rules) means another round; nothing
-    # to apply means the iteration is approved. Captured in status.yaml
-    # at the end (no separate architect.yaml).
-    needs_round = bool(
-        parsed["corrections"]
-        or parsed["rejected_correction_ids"]
-        or parsed["proposed_conventions"]
-        or parsed["proposed_decisions"]
-    )
+    needs_round = bool(parsed["corrections"] or parsed["rules"])
 
-    # Distribute architect's corrections directly into the relevant
-    # role's corrections file. Role comes from `action_id` prefix
-    # (fix/remove) or from `for_role` (missing). Each correction gets
-    # an architect-prefixed id so its source is greppable.
+    # Architect's cross-role corrections land in each affected role's
+    # PENDING file. The validate stage then fans out to that role's
+    # lead to vote accept/reject; only accepted ones become a real
+    # punch-list entry. Role comes from `action_id` prefix (fix/remove)
+    # or from `for_role` (missing). Each correction gets an
+    # architect-prefixed id so its source is greppable.
     by_role: dict[str, list[dict]] = {}
     skipped: list[dict] = []
     for i, c in enumerate(parsed["corrections"]):
@@ -311,74 +306,341 @@ def _persist_architect_output(
         by_role.setdefault(target_role, []).append(entry)
 
     for role, additions in by_role.items():
-        existing = proposals.read_corrections(project_dir, iteration_n, role)
-        proposals.write_corrections(
-            project_dir, iteration_n, role, existing + additions,
+        proposals.append_pending_corrections(
+            project_dir, iteration_n, role, additions,
         )
-        print(
-            f"  ✓ {role}.corrections.yaml +{len(additions)} from architect",
-            file=sys.stderr,
+        spinner.log(
+            f"  ✓ {role}.corrections-pending.yaml +{len(additions)} "
+            f"from architect (lead validation in validate stage)"
         )
     if skipped:
-        print(
+        spinner.log(
             f"  ✗ {len(skipped)} architect correction(s) skipped — "
-            f"role unresolved",
-            file=sys.stderr,
+            f"role unresolved"
         )
 
-    # Move rejected lead corrections to their respective rejected files.
-    moved, missing = 0, 0
-    for cid in parsed["rejected_correction_ids"]:
-        role_for_id = _role_from_correction_id(cid, roles)
-        if role_for_id is None:
-            missing += 1
-            continue
-        if proposals.reject_correction(
-            project_dir, iteration_n, role_for_id, cid,
-            rejected_by="architect",
-        ):
-            moved += 1
-        else:
-            missing += 1
-    if parsed["rejected_correction_ids"]:
-        print(
-            f"  ✓ rejected {moved} correction(s) cross-role"
-            + (f", {missing} not found" if missing else ""),
-            file=sys.stderr,
-        )
-
-    # Architect's proposed conv/dec → iteration global pending stores.
-    conv_records = proposals.to_pending_records(
-        parsed["proposed_conventions"],
-        id_prefix=f"v84-{iteration_n}.architect.conv",
+    # Architect's proposed rules → iteration global pending store.
+    rule_records = proposals.to_pending_rule_records(
+        parsed["rules"],
+        id_prefix=f"v84-{iteration_n}.architect.rule",
     )
-    if conv_records:
-        proposals.write_conventions(project_dir, iteration_n, "global", conv_records)
-        print(
-            f"  ✓ {iter_dir / 'global.conventions.yaml'} "
-            f"({len(conv_records)} proposed)",
-            file=sys.stderr,
-        )
-
-    dec_records = proposals.to_pending_records(
-        parsed["proposed_decisions"],
-        id_prefix=f"v84-{iteration_n}.architect.dec",
-    )
-    if dec_records:
-        proposals.write_decisions(project_dir, iteration_n, "global", dec_records)
-        print(
-            f"  ✓ {iter_dir / 'global.decisions.yaml'} "
-            f"({len(dec_records)} proposed)",
-            file=sys.stderr,
+    if rule_records:
+        proposals.write_rules(project_dir, iteration_n, "global", rule_records)
+        spinner.log(
+            f"  ✓ {iter_dir / 'global.rules.yaml'} "
+            f"({len(rule_records)} proposed)"
         )
 
     return needs_round
 
 
+# -----------------------------------------------------------------------------
+# Pre-flight: is there anything for lead_validate to vote on?
+# -----------------------------------------------------------------------------
+
+def _has_lead_validate_scope(
+    project_dir: Path, iteration_n: int, roles: list[str],
+) -> bool:
+    """Return True iff at least one role has something in scope for
+    the verdict call: a lead-blessed pending correction (id NOT
+    containing `architect.c.`) OR any pending / accepted rule."""
+    for role in roles:
+        # Lead-blessed pending corrections.
+        for c in proposals.read_pending_corrections(
+            project_dir, iteration_n, role,
+        ):
+            cid = c.get("id") or ""
+            if cid and "architect.c." not in cid:
+                return True
+        # Pending or accepted rules.
+        for r in proposals.read_rules(project_dir, iteration_n, role):
+            if r.get("status") in ("pending", "accepted"):
+                return True
+    return False
+
+
+# -----------------------------------------------------------------------------
+# Phase A: apply lead_validate verdicts (lead corrections + role rules)
+# -----------------------------------------------------------------------------
+
+def _apply_lead_correction_verdicts(
+    *,
+    project_dir: Path,
+    iteration_n: int,
+    roles: list[str],
+    verdicts: list[dict],
+) -> None:
+    """Apply architect verdicts on lead-blessed corrections in scope.
+
+    The verdict scope covers items in `<role>.corrections-pending.yaml`
+    that are lead-blessed (reviewer-source the lead accepted, plus
+    lead's own raises) — architect cross-role corrections in the same
+    file are voted on later by `architect_validate` and excluded here
+    by id pattern.
+
+    Per-verdict transition:
+    - `accept` → record moves from pending to `<role>.corrections.yaml`
+                  (now binding for patch).
+    - `reject` → record moves from pending to
+                  `<role>.corrections-rejected.yaml` tagged
+                  `rejected_by: architect`.
+    """
+    by_role: dict[str, dict[str, dict]] = {}   # role -> {id: verdict}
+    orphan = 0
+    for v in verdicts:
+        cid = v.get("id")
+        if not cid or "architect.c." in cid:
+            # Architect-source corrections are handled by
+            # architect_validate, not lead_validate. Skip.
+            continue
+        role = _role_from_correction_id(cid, roles)
+        if role is None:
+            orphan += 1
+            continue
+        by_role.setdefault(role, {})[cid] = v
+
+    if orphan:
+        spinner.log(
+            f"  ✗ {orphan} lead_validate correction verdict(s) skipped — "
+            f"role unresolved"
+        )
+
+    for role, vmap in by_role.items():
+        pending = proposals.read_pending_corrections(
+            project_dir, iteration_n, role,
+        )
+        keep_pending: list[dict] = []
+        accepted: list[dict] = []
+        rejected: list[dict] = []
+        for rec in pending:
+            v = vmap.get(rec.get("id"))
+            if v is None:
+                keep_pending.append(rec)
+                continue
+            if v["verdict"] == "accept":
+                accepted.append(rec)
+            else:
+                rec_out = dict(rec)
+                rec_out["rejected_by"] = "architect"
+                if v.get("reason"):
+                    rec_out["rejection_reason"] = v["reason"]
+                rejected.append(rec_out)
+
+        # Move accepted records into corrections.yaml (binding) and
+        # rejected ones into corrections-rejected.yaml. Pending file
+        # is rewritten without either set so only items still
+        # awaiting their verdict (architect cross-role) remain.
+        if accepted:
+            existing = proposals.read_corrections(
+                project_dir, iteration_n, role,
+            )
+            proposals.write_corrections(
+                project_dir, iteration_n, role, existing + accepted,
+            )
+        if rejected:
+            existing_rej = proposals.read_rejected_corrections(
+                project_dir, iteration_n, role,
+            )
+            proposals.write_rejected_corrections(
+                project_dir, iteration_n, role, existing_rej + rejected,
+            )
+        proposals.write_pending_corrections(
+            project_dir, iteration_n, role, keep_pending,
+        )
+        spinner.log(
+            f"  ✓ {role}: lead corrections — {len(accepted)} accepted "
+            f"by architect → corrections.yaml, {len(rejected)} rejected"
+        )
+
+
+def _apply_lead_rule_verdicts(
+    *,
+    project_dir: Path,
+    iteration_n: int,
+    roles: list[str],
+    verdicts: list[dict],
+    parent_task_id: str,
+) -> None:
+    """Apply architect verdicts on role-scoped rules in scope.
+
+    Verdict scope covers any rule the leads have blessed:
+    - status: pending records (lead-blessed reviewer raises + lead's
+      own raises). Accept → flip to accepted + synthesize apply-
+      correction so patch picks up the new binding. Reject → flip to
+      rejected.
+    - status: accepted records (older accepted rules still binding
+      from earlier rounds). Accept → no-op. Reject → flip to rejected
+      and retract the rule's synthetic apply-correction so patch
+      doesn't carry a now-rejected rule forward.
+
+    Records with no matching verdict are untouched. Records in other
+    statuses (rejected, superseded) are out of scope.
+    """
+    grouped: dict[str, dict[str, dict]] = {}
+    orphan = 0
+    for v in verdicts:
+        rid = v.get("id")
+        role = _role_from_correction_id(rid or "", roles)
+        if role is None:
+            orphan += 1
+            continue
+        grouped.setdefault(role, {})[rid] = v
+
+    if orphan:
+        spinner.log(
+            f"  ✗ {orphan} lead_validate rule verdict(s) skipped — "
+            f"role unresolved"
+        )
+
+    for role, vmap in grouped.items():
+        records = proposals.read_rules(project_dir, iteration_n, role)
+        accepted_ids: list[str] = []
+        rejected_ids: list[str] = []
+        for r in records:
+            rid = r.get("id")
+            v = vmap.get(rid)
+            if v is None:
+                continue
+            status = r.get("status")
+            verdict = v["verdict"]
+            if status == "pending":
+                if verdict == "accept":
+                    r["status"] = "accepted"
+                    # Lead's preferred wording (recorded in
+                    # apply_lead_verdicts during lead_round) lives in
+                    # `text`; preserve it. Fall back to proposal if
+                    # somehow absent.
+                    if not r.get("text"):
+                        r["text"] = (r.get("proposal") or "").strip()
+                    r.pop("rejection_reason", None)
+                    accepted_ids.append(rid)
+                else:
+                    r["status"] = "rejected"
+                    r["rejected_by"] = "architect"
+                    if v.get("reason"):
+                        r["rejection_reason"] = v["reason"]
+                    r.pop("text", None)
+                    rejected_ids.append(rid)
+            elif status == "accepted":
+                if verdict == "reject":
+                    r["status"] = "rejected"
+                    r["rejected_by"] = "architect"
+                    if v.get("reason"):
+                        r["rejection_reason"] = v["reason"]
+                    r.pop("text", None)
+                    rejected_ids.append(rid)
+                # accept on already-accepted = no-op
+            # other statuses (rejected, superseded) untouched
+        if accepted_ids or rejected_ids:
+            proposals.write_rules(project_dir, iteration_n, role, records)
+
+        # For newly-accepted rules, synthesize apply-corrections so
+        # patch (next round) updates the role's draft to comply.
+        synth_added = 0
+        for rid in accepted_ids:
+            rec = next((r for r in records if r.get("id") == rid), None)
+            if rec is None:
+                continue
+            rule_text = rec.get("text") or rec.get("proposal") or ""
+            synth = proposals.synthesize_apply_correction(
+                rule_id=rid,
+                rule_text=rule_text,
+                parent_task_id=parent_task_id,
+                scope="role",
+            )
+            if proposals.append_synthetic_correction(
+                project_dir, iteration_n, role, synth,
+            ):
+                synth_added += 1
+
+        # For newly-rejected rules that were previously accepted,
+        # retract any synthetic apply-correction in the role's
+        # corrections.yaml so patch doesn't carry the rule forward.
+        retracted = _retract_apply_corrections(
+            project_dir, iteration_n, role, rejected_ids,
+        )
+
+        msg_parts = []
+        if accepted_ids:
+            msg_parts.append(f"{len(accepted_ids)} accepted")
+        if rejected_ids:
+            msg_parts.append(f"{len(rejected_ids)} rejected")
+        if msg_parts:
+            extra = []
+            if synth_added:
+                extra.append(f"{synth_added} synth apply added")
+            if retracted:
+                extra.append(f"{retracted} synth apply retracted")
+            tail = f" ({', '.join(extra)})" if extra else ""
+            spinner.log(
+                f"  ✓ {role}: rules — {', '.join(msg_parts)} by architect{tail}"
+            )
+
+
+def _retract_apply_corrections(
+    project_dir: Path,
+    iteration_n: int,
+    role: str,
+    rule_ids,
+) -> int:
+    """Drop entries with id `<rule_id>.apply` from <role>.corrections.yaml.
+    Returns count removed. The `.apply` suffix matches what
+    proposals.synthesize_apply_correction emits in lead_round."""
+    target_ids = {f"{rid}.apply" for rid in rule_ids}
+    if not target_ids:
+        return 0
+    existing = proposals.read_corrections(project_dir, iteration_n, role)
+    keep = [c for c in existing if c.get("id") not in target_ids]
+    removed = len(existing) - len(keep)
+    if removed:
+        proposals.write_corrections(project_dir, iteration_n, role, keep)
+    return removed
+
+
+def _norm_rule_verdicts(data: dict) -> list[dict]:
+    """lead_validate response's `rules` → list of full
+    `{id, verdict, reason?}` verdicts. Both accepts and rejects are
+    kept — accept transitions pending → accepted (synth apply-
+    correction generated); reject transitions to rejected."""
+    return _norm_full_verdicts(data, "rules")
+
+
+def _norm_correction_verdicts(data: dict) -> list[dict]:
+    """lead_validate response's `corrections` → list of full
+    `{id, verdict, reason?}` verdicts. Accept moves the lead-blessed
+    correction from pending to corrections.yaml; reject moves it to
+    corrections-rejected.yaml."""
+    return _norm_full_verdicts(data, "corrections")
+
+
+def _norm_full_verdicts(data: dict, key: str) -> list[dict]:
+    """Schema-validated upstream; just normalise whitespace and filter
+    invalid rows."""
+    if not isinstance(data, dict):
+        return []
+    raw = data.get(key)
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    for r in raw:
+        if not isinstance(r, dict):
+            continue
+        rid = (r.get("id") or "").strip()
+        verdict = r.get("verdict")
+        if not rid or verdict not in ("accept", "reject"):
+            continue
+        entry: dict[str, Any] = {"id": rid, "verdict": verdict}
+        reason = r.get("reason")
+        if isinstance(reason, str) and reason.strip():
+            entry["reason"] = reason.strip()
+        out.append(entry)
+    return out
+
+
 def _role_from_correction_id(cid: str, roles: list[str]) -> Optional[str]:
     """A correction id encodes its role somewhere in the dotted path.
 
-    Lead's accepted reviewer suggestion ids:  v84-1.frontend.pages.s.3
+    Lead's accepted reviewer correction ids:  v84-1.frontend.pages.c.3
     Lead's own correction ids:                v84-1.frontend.lead.c.1
     Either way, the role tag appears as a token in the dotted id.
     """
@@ -396,29 +658,23 @@ def _role_from_correction_id(cid: str, roles: list[str]) -> Optional[str]:
 _CORRECTION_VERDICTS = {"fix", "missing", "remove"}
 
 
-def _parse(yaml_text: str) -> dict:
-    try:
-        data = yaml.safe_load(yaml_text) or {}
-    except yaml.YAMLError:
-        data = {}
+def _parse(data: dict) -> dict:
+    """Architect raise response is `{corrections, rules}`, already
+    shape-validated by the response_format schema. Just sanity-filter
+    rows. Rejection of lead corrections / lead-raised rules lives in
+    the parallel verdict call's response, not here."""
     if not isinstance(data, dict):
         data = {}
 
     return {
         "corrections": _norm_corrections(data.get("corrections")),
-        "rejected_correction_ids": _norm_rejected_ids(
-            data.get("rejected_corrections"),
-        ),
-        "proposed_conventions": _norm_proposals(
-            data.get("proposed_conventions"),
-        ),
-        "proposed_decisions": _norm_proposals(
-            data.get("proposed_decisions"),
-        ),
+        "rules": _norm_proposals(data.get("rules")),
     }
 
 
 def _norm_corrections(raw: Any) -> list[dict]:
+    """Architect cross-role corrections. Schema validation upstream
+    enforces shape — no permissive aliases here."""
     if not isinstance(raw, list):
         return []
     out: list[dict] = []
@@ -444,20 +700,6 @@ def _norm_corrections(raw: Any) -> list[dict]:
             if isinstance(aid, str) and aid.strip():
                 entry["action_id"] = aid.strip()
         out.append(entry)
-    return out
-
-
-def _norm_rejected_ids(raw: Any) -> list[str]:
-    if not isinstance(raw, list):
-        return []
-    out: list[str] = []
-    for r in raw:
-        if isinstance(r, dict):
-            cid = r.get("id")
-        else:
-            cid = r
-        if isinstance(cid, str) and cid.strip():
-            out.append(cid.strip())
     return out
 
 
@@ -520,7 +762,7 @@ STAGE = Stage(
     title="Architect synthesises cross-role",
     priority=1401,
     produces="iterations/<n>/status.yaml#next_step",
-    requires=("lead",),
+    requires=("cycle",),
     needs_brief=False,
     is_done=_is_done,
     call=architect,

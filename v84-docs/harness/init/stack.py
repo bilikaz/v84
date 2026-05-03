@@ -22,14 +22,14 @@ import yaml
 
 from core.context import active_roles
 from core.stage import Stage
-from ui import Spinner, field_editor
+from ui import field_editor
 from core.util import (
     default_log_dir,
-    instruction_path,
+    load_instruction,
     project_v84_dir,
     v84_docs_root,
 )
-from llm import LLMConfig, call
+from llm import LLMConfig, call_json
 
 
 # No tools exposed — every uncertainty surfaces as `alternatives`
@@ -70,29 +70,25 @@ def suggest_stack(
             "no active role contributes stack fields — nothing to propose."
         )
 
-    skill_file = instruction_path("init", "suggest-stack.md")
-    if not skill_file.exists():
-        raise FileNotFoundError(f"Instruction not found: {skill_file}")
-    system = skill_file.read_text(encoding="utf-8")
+    system, schema = load_instruction("init", "suggest-stack")
 
     user_msgs = [
         f"## Project brief\n\n{brief}",
         fields_block,
-        "Propose a technology stack. Follow your output format exactly.",
+        "Propose a technology stack.",
     ]
 
     if cfg is None:
         raise ValueError("LLMConfig required — call via v84.py or pass cfg=")
 
-    with Spinner(f"calling {cfg.model} @ {cfg.url}"):
-        response = call(
-            cfg,
-            system=system,
-            user_msgs=user_msgs,
-            log_name="init-suggest-stack",
-            log_dir=default_log_dir(),
-            # max_tokens=4096,
-        )
+    response = call_json(
+        cfg,
+        system=system,
+        user_msgs=user_msgs,
+        response_schema=schema,
+        log_name="init-suggest-stack",
+        log_dir=default_log_dir(),
+    )
 
     parsed = _parse_stack_proposal(response, contributing)
 
@@ -120,10 +116,14 @@ def suggest_stack(
 # -----------------------------------------------------------------------------
 
 def _parse_stack_proposal(
-    yaml_text: str,
+    data: dict,
     contributing: list[str],
 ) -> dict:
-    """Parse the LLM's stack response.
+    """Reshape the LLM's stack response for the field_editor UI.
+
+    Input is the schema-validated dict — top level has `summary` plus
+    one key per role-tag, each role being a `{field: {recommendation,
+    alternatives}}` mapping.
 
     Returns:
         {
@@ -136,12 +136,8 @@ def _parse_stack_proposal(
     (`v84-docs/init/stack/<role>.yaml`) to backfill the `optional`
     flag — the LLM doesn't return it.
     """
-    try:
-        data = yaml.safe_load(yaml_text) or {}
-    except yaml.YAMLError as exc:
-        raise RuntimeError(f"LLM output was not valid YAML: {exc}") from exc
     if not isinstance(data, dict):
-        raise RuntimeError("LLM output did not parse as a YAML mapping")
+        raise RuntimeError("LLM stack response was not a mapping")
 
     stack_dir = v84_docs_root() / "init" / "stack"
     fields: dict[str, dict] = {}

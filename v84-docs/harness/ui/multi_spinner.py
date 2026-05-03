@@ -44,6 +44,10 @@ class MultiSpinner:
         self._starts: list[Optional[float]] = [None] * self._n
         self._ends: list[Optional[float]] = [None] * self._n
         self._errors: list[Optional[BaseException]] = [None] * self._n
+        # Per-track streaming progress, populated by llm.client._post when
+        # a per-call `on_stream` hook is plumbed through. Each entry is
+        # `{phase, content, reasoning, tail, since}` or None.
+        self._streams: list[Optional[dict]] = [None] * self._n
         # Pad labels so the spinner column aligns across tracks.
         self._lw = max((len(l) for l in self.labels), default=0)
 
@@ -63,6 +67,34 @@ class MultiSpinner:
                     self._starts[idx] = time.monotonic()
                 self._ends[idx] = time.monotonic()
                 self._errors[idx] = error
+                # Keep the last stream snapshot — `_format` strips the
+                # phase + tail on ended tracks and shows just the final
+                # char counts as a tiny stats footnote.
+
+    def stream_update(
+        self, idx: int, *, phase: str,
+        content: int, reasoning: int, tail: str,
+        loop_ratio: Optional[float] = None,
+        loop_streak: int = 0,
+    ) -> None:
+        """Per-call streaming hook. Plumbed in via call_many → call_json
+        → _post when MultiSpinner is the progress callback. Stores the
+        latest snapshot; the paint loop reads it next frame.
+
+        `loop_ratio` and `loop_streak` come from `_post`'s loop detector;
+        rendered as `loop:R(N/M)` so the operator sees the streak
+        building up before a kill fires."""
+        with self._lock:
+            if 0 <= idx < self._n:
+                self._streams[idx] = {
+                    "phase": phase,
+                    "content": content,
+                    "reasoning": reasoning,
+                    "tail": tail,
+                    "loop_ratio": loop_ratio,
+                    "loop_streak": loop_streak,
+                    "since": time.monotonic(),
+                }
 
     # ------------------------------------------------------------------
     # context manager
@@ -126,11 +158,36 @@ class MultiSpinner:
         start = self._starts[i]
         end = self._ends[i]
         err = self._errors[i]
+        stream = self._streams[i]
         if end is not None:
             mark = "✓" if err is None else "✗"
             elapsed = (end - start) if start is not None else 0.0
-            return f"  {mark} {label}  ({elapsed:.1f}s)"
+            base = f"  {mark} {label}  ({elapsed:.1f}s)"
+            if stream:
+                # Final stats footnote — no phase, no tail, just totals
+                # so the row stays readable but the run's volume is
+                # visible at a glance.
+                stats = (
+                    f"think:{stream['reasoning']:,}c "
+                    f"content:{stream['content']:,}c"
+                )
+                return f"{base}   {stats}"
+            return base
         if start is not None:
             elapsed = now - start
-            return f"  {frame} {label}  ({elapsed:.0f}s)"
+            base = f"  {frame} {label}  ({elapsed:.0f}s)"
+            if stream:
+                loop_tag = ""
+                if stream.get("loop_ratio") is not None:
+                    loop_tag = (
+                        f" loop:{stream['loop_ratio']:.2f}"
+                        f"({stream['loop_streak']}/3)"
+                    )
+                tail_line = (
+                    f"{stream['phase']} — think:{stream['reasoning']:,}c "
+                    f"content:{stream['content']:,}c"
+                    f"{loop_tag} ▶ {stream['tail']!r}"
+                )
+                return f"{base}   {tail_line}"
+            return base
         return f"    {label}  (queued)"

@@ -2,8 +2,9 @@
 
 You are the writer for one role. Your job: take this iteration's
 sub-task plan and emit the concrete actions YOUR ROLE will
-perform. One action = one file-level change: which file to touch,
-what exactly to add or change, what other actions it depends on.
+perform. One action = one logical change (may touch multiple
+files): which files to touch, what exactly to add or change, what
+other actions it depends on.
 
 ## What you receive
 
@@ -13,8 +14,8 @@ what exactly to add or change, what other actions it depends on.
   / flat / scripts) and the named sections this role owns with
   their paths. Use these section paths in every action's `files:`
   field; reference sections by name in your action prose.
-- Conventions and decisions that apply to your role — already
-  scope-filtered. Treat them as binding rules.
+- Rules that apply to your role — already scope-filtered. Treat
+  them as binding.
 - Your role's accumulated implementation history when present —
   every action this role has shipped in past iterations, grouped
   by iteration → task → actions. Treat it as the current state of
@@ -47,95 +48,81 @@ Anything technically correct but oversized for the project's scope
 is noise. Hold to what would actually move this iteration forward,
 given how big the thing being built is.
 
-## Output Format
+## Action vs verify
 
-**Think as long as you need before submitting.** Use the thinking
-phase to scope, sequence dependencies, and check that every applicable
-sub-task is covered. Longer thinking is fine — longer *response* is not.
+Each action is an imperative build instruction — what to put in
+the file, what behaviour to wire up, what dependency relation to
+other actions. `action:` prose carries that, and only that.
 
-When finished, the **first non-thinking line** must be exactly:
+A separate `verify:` field (optional, block scalar) describes the
+**observable behaviour** that must hold once the action's output
+is in place — what an implementer can see by running, clicking,
+inspecting, or grepping the artifact. One assertion per line.
 
-====== MY RESPONSE ======
+Use verify rows when the action produces something whose
+correctness shows up externally:
 
-After the marker emit **valid YAML** with up to three top-level
-fields. Use `needs_convention` / `needs_decision` sparingly —
-every flag costs a downstream debate.
+- HTTP status codes, response shapes, and Set-Cookie attributes
+  for routes.
+- DOM landmarks, button effects, console-error absence for UI.
+- Image build success, healthcheck transitions, container exit
+  codes for infra.
+- Pinned versions, header presence, regex-detectable shapes for
+  config files.
+- Test runner exit code + pass count for test suites.
 
-- `actions`: an ordered list of action entries. Each entry has:
-  - `id`: `<task_id>.<role_tag>.<n>` — the task id this action
-    implements, your role_tag, and a per-action `<n>` starting at
-    1 inside each task.
-  - `action`: block scalar (`|` style) prose describing the
-    concrete change.
-  - `files`: list of file paths the action touches.
-  - `depends` (optional): list of other action ids this action
-    depends on. Drop the field entirely when there are none.
-- `needs_convention` (optional): list of `{proposal, alternatives}`
-  proposing a durable rule that should apply across this and future
-  iterations (e.g. "all DB columns use snake_case mapping").
-  `proposal` is the rule you'd enact; `alternatives` is a list of
-  1–3 other viable forms of the same rule. Drop the field entirely
-  when nothing to flag. Ids are assigned by the harness — do not
-  emit them.
-- `needs_decision` (optional): list of `{proposal, alternatives}`
-  proposing a one-time ruling for this iteration only (e.g. "should
-  sessions auto-extend on activity?"). `proposal` is your preferred
-  answer; `alternatives` is a list of 1–3 other concrete answers.
-  Drop the field entirely when nothing to flag. Ids are assigned by
-  the harness.
+Don't use verify rows for:
 
-**Every prose field uses `|` block scalar.** That covers `action`,
-every `proposal`, and every `alternatives` entry. Plain scalars
-break when prose contains colons followed by a space (`(foo: bar)`),
-quotes, or other YAML-special chars. Block scalars never do.
+- **Subjective judgment.** "Error messages are clear" / "the
+  layout feels balanced." These can't honestly be answered yes /
+  no by an implementer without taste calls. Raise as a
+  `rules` if you want a durable rule, otherwise let it ride.
+- **Internal logic with no external surface.** "Function _decode
+  correctly handles unpadded base64url." That's a unit test owned
+  by the testing role's actions. Verify rows describe outside-
+  observable behaviour.
+- **Infrastructure the implementer doesn't have.** "Metrics
+  arrive in Datadog." Defer.
 
-### Output Example
+If verify-shaped wording leaks into your `action:` prose ("ensure
+X", "must return Y", "guarantees Z"), move it. Action stays
+imperative; verify carries the assertions.
 
-```
-====== MY RESPONSE ======
+Actions that produce non-runnable artifacts — README files,
+license documents, schema YAML the implementer doesn't execute —
+omit `verify:` entirely. File presence + the iteration tag is
+their acceptance test.
 
-actions:
-  - id: v84-1.1.frontend.1
-    action: |
-      Add the responsive page shell to index.html — meta viewport,
-      a full-viewport flex container, and a centred .canvas div sized
-      via min(80vw, 80vh) for fluid scaling on mobile and desktop.
-    files:
-      - index.html
-  - id: v84-1.2.frontend.1
-    action: |
-      Implement the atmospheric layer in index.html <style>: a .sun
-      block with radial gradient and box-shadow glow, three .cloud
-      elements, and an @keyframes drift loop with staggered delays so
-      the background feels continuous without distracting motion.
-    files:
-      - index.html
-    depends:
-      - v84-1.1.frontend.1
-  - id: v84-1.3.frontend.1
-    action: |
-      Define tree component structure — nested .trunk, .branch, and
-      .leaf elements inside .canvas with absolute positioning relative
-      to the canvas centre and an earthy palette in tokens at the top
-      of the stylesheet.
-    files:
-      - index.html
+## What to emit
 
-needs_convention:
-  - proposal: |
-      Every CSS animation block is wrapped in `@media (prefers-reduced-motion: no-preference)` so the page degrades to a static scene when the user opts out.
-    alternatives:
-      - |
-        All animations gated by a single `:root` custom property; toggle from one place.
-      - |
-        Animations always on; provide a small UI control for the user to pause.
+Think as long as you need. Keep the response short.
 
-needs_decision:
-  - proposal: |
-      Stay fully self-contained — system fonts only, no third-party requests.
-    alternatives:
-      - |
-        Allow Google Fonts via `<link>` for headings; everything else stays local.
-      - |
-        Allow any CDN (fonts, icons, libs) — convenience over isolation.
-```
+Respond with a single JSON object with two keys: `actions` and
+`rules`. Both keys are required. Use the `rules` list sparingly —
+every rule proposal costs a downstream debate, so emit an empty
+`rules` array when nothing warrants a project-level rule.
+
+`actions` are concrete actions in order. Each entry:
+
+- `id`: `<task_id>.<role_tag>.<n>`. The task id, your role_tag,
+  and a per-action `<n>` starting at 1 inside each task.
+- `action`: imperative prose. The concrete change to build.
+- `files`: file paths the action touches.
+- `depends`: action ids this one depends on. Empty list when none.
+- `verify`: observable assertions, one per line. Omit entirely
+  for non-runnable artifacts like docs or license files.
+
+`rules` are role-scoped rule proposals. Each entry:
+
+- `proposal`: the rule wording.
+- `alternatives`: 1 to 3 other viable wordings.
+
+### How to draft each action
+
+Think verify-first. For each action, first picture the observable
+assertions that would tell the implementer the action is done
+correctly. What they could check by running, clicking, inspecting,
+or grepping. Write those as `verify` rows. Then write the
+imperative `action` prose that, once implemented, satisfies those
+assertions. This keeps the action a clean imperative. Filler like
+"ensure X" or "must return Y" stays out of the action prose.

@@ -18,7 +18,7 @@ from ui import single_select
 
 from .start import start
 from .setup_llm import setup_llm
-from .manage_rules import manage_conventions, manage_decisions
+from .manage_rules import manage_rules
 
 
 # Registry of menu items. `name` is the value returned by
@@ -40,16 +40,10 @@ _ITEMS: list[dict] = [
         "action": setup_llm,
     },
     {
-        "name": "manage_conv",
-        "label": "Manage conventions",
+        "name": "manage_rules",
+        "label": "Manage rules",
         "info": "review/edit project-promoted rules",
-        "action": manage_conventions,
-    },
-    {
-        "name": "manage_dec",
-        "label": "Manage decisions",
-        "info": "review/edit project-promoted one-shot rulings",
-        "action": manage_decisions,
+        "action": manage_rules,
     },
     {
         "name": "quit",

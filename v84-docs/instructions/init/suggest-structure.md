@@ -48,136 +48,30 @@ locations) where that role's code, config, tests, and assets land.
    is a separate field. Examples of good section names: `app`,
    `pages`, `components`, `entities`, `migrations`, `tests`,
    `stories`, `compose`, `ci`. Bad: `apps_web_src`, `srctests`.
-5. **Every section gets a one-line `notes:`** explaining what
-   lands in that path. Skip notes when truly self-evident
-   (`tests` → "Unit + integration tests" is fine; `app` → "Next.js
-   app root" is fine; bare `migrations` is OK without notes).
+5. **Every section has a `notes` field** — a one-line explanation
+   of what lands in that path, or an empty string when the section
+   name is self-evident (`tests`, `app`, bare `migrations`).
 6. **Don't overlap roles' top-level paths** when the layout type
    demands separation. In a monorepo, frontend gets `apps/web/`
    and backend gets `apps/api/`; never both under `apps/web/`.
 
-## Output Format
+## What to emit
 
-**Think as long as you need before submitting.** Use the thinking
-phase to weigh the layout type against project complexity, decide
-each role's section set against its stack, and check for path
-overlaps. Longer thinking is fine — longer *response* is not.
+Think as long as you need. Keep the response short.
 
-When finished, the **first non-thinking line** must be exactly:
+Respond with a single JSON object with these top-level keys:
 
-====== MY RESPONSE ======
-
-After the marker emit **valid YAML** with these top-level fields:
-
-- `layout_type`: one of `monorepo`, `single-app`, `flat`, `scripts`.
-- `summary`: 2–4 sentences explaining the layout choice and any
-  trade-offs worth flagging (e.g. "Monorepo because frontend and
-  backend ship as separate Docker images; chose `apps/` over
-  `packages/` for runnable units").
-- One top-level key per active role, each holding a list of
-  `{name, path, notes?}` entries. Entry order should reflect
-  intended reading order (most-used first).
-- An optional `global` key (same `[{name, path, notes?}]` shape)
-  for project-wide root files that don't belong to any single
-  role. **Required for `monorepo` layout type** — list the
-  workspace manifest, root package.json, root tsconfig, root
-  .gitignore / .npmrc / .nvmrc as appropriate to the chosen
-  stack. Skip this key for `single-app` / `flat` / `scripts`
-  layouts unless the project genuinely has root-level files no
-  single role owns.
-
-**Every prose field uses `|` block scalar.** That covers `notes`
-and `summary`.
-
-### Output Example
-
-This is illustrative — your active roles are whatever was passed
-in. Do not invent roles that aren't listed.
-
-```
-====== MY RESPONSE ======
-
-layout_type: monorepo
-
-summary: |
-  Monorepo with separate frontend and backend apps under apps/.
-  Frontend uses Next.js with Storybook so we surface a stories/
-  section; backend uses NestJS so modules/ + entities/ +
-  migrations/ get distinct sections. DevOps lives at the repo
-  root since compose and CI are project-wide. Root scaffolding
-  (workspace manifest, root package.json, root configs) lives
-  under `global:` so no single role owns it.
-
-global:
-  - name: workspace
-    path: pnpm-workspace.yaml
-    notes: |
-      Lists `apps/*` and `packages/*` so pnpm resolves
-      cross-package dependencies.
-  - name: root_package
-    path: package.json
-    notes: |
-      Root package.json with `"private": true` and shared dev
-      tooling (typescript, eslint, prettier).
-  - name: root_tsconfig
-    path: tsconfig.json
-    notes: |
-      Base tsconfig the per-app tsconfigs extend.
-  - name: root_gitignore
-    path: .gitignore
-  - name: nvmrc
-    path: .nvmrc
-    notes: |
-      Pin the Node version every package builds against.
-
-frontend:
-  - name: app
-    path: apps/web
-    notes: |
-      Next.js app root — package.json, next.config.js, tsconfig.json.
-  - name: pages
-    path: apps/web/src/pages
-    notes: |
-      File-based routing — one page per route.
-  - name: components
-    path: apps/web/src/components
-    notes: |
-      Reusable UI primitives. Each component has its own folder
-      with index.tsx, styles, and tests.
-  - name: tests
-    path: apps/web/tests
-    notes: |
-      Jest unit + integration. Per-component tests stay beside
-      the component; cross-cutting suites land here.
-  - name: stories
-    path: apps/web/.storybook
-    notes: |
-      Storybook config. Per-component stories live with the
-      component, not here.
-
-backend:
-  - name: api
-    path: apps/api
-    notes: |
-      NestJS service root — main.ts, app.module.ts.
-  - name: modules
-    path: apps/api/src/modules
-  - name: entities
-    path: apps/api/src/database/entities
-  - name: migrations
-    path: apps/api/src/database/migrations
-  - name: tests
-    path: apps/api/tests
-
-devops:
-  - name: compose
-    path: docker/
-    notes: |
-      docker-compose files per environment.
-  - name: ci
-    path: .github/workflows/
-  - name: scripts
-    path: scripts/
-    notes: |
-      Project-wide bash helpers (build, test, deploy).
-```
+- `layout_type`: one of `monorepo`, `single-app`, `flat`,
+  `scripts`.
+- `summary`: 2 to 4 sentences. The layout choice and any
+  trade-offs worth flagging.
+- One key per active role. Use the role-tags from the input
+  verbatim. The value is a list of entries with `name`, `path`,
+  and `notes`. Order entries from most-touched to least-touched
+  during normal development.
+- `global`: optional. Same entry shape. For project-wide root
+  files that no single role owns. Required for `monorepo`. List
+  the workspace manifest, root package.json, root tsconfig, root
+  .gitignore, .npmrc, .nvmrc as the stack needs. Skip for
+  `single-app`, `flat`, and `scripts` unless the project has
+  root-level files no single role owns.

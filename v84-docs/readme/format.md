@@ -1,18 +1,25 @@
 # Format
 
-> YAML for everything structured. Markdown only for free-form
-> agent prose under `instructions/`. Tight rules on naming, ids,
-> and prose fields keep parsing trivial.
+> YAML on disk, JSON Schema on the wire. Markdown only for
+> free-form agent prose under `instructions/`. Tight rules on
+> naming, ids, and prose fields keep parsing trivial.
 
-## YAML by default
+This page covers naming conventions and the on-disk YAML
+discipline. The on-wire JSON Schema protocol — how the harness
+talks to the model — lives in [llm-format.md](llm-format.md).
+
+## YAML by default (on disk)
 
 Every file under `<project>/v84/` is YAML. No bespoke text
 formats. No mixed structure + prose files. Parsing is `yaml.safe_load`
 end-to-end.
 
-Markdown only in two places:
-- Agent system prompts under `v84-docs/instructions/`.
+Markdown only in three places:
+- Agent system prompts under `v84-docs/instructions/<group>/<stem>.md`
+  (paired with a `<stem>.schema.json`).
 - These conceptual docs under `v84-docs/readme/`.
+- Hand-off documents the harness writes for an external
+  implementer: `iterations/<n>/tasks.md` and `iterations/<n>/fix.md`.
 
 ## Field naming: `_id` vs `_tag`
 
@@ -40,15 +47,14 @@ different reading modes.
 | Iteration / top-task  | `v84-N`                                      | harness      |
 | Sub-task              | `v84-N.M`, `v84-N.M.K`, … (recursive)        | harness      |
 | Action                | `<task_id>.<role_tag>.<n>`                   | agent (writer/patch) |
-| Suggestion            | `v84-<iter>.<role>.<reviewer_tag>.s.<n>`     | harness      |
+| Reviewer correction   | `v84-<iter>.<role>.<reviewer_tag>.c.<n>`     | harness      |
 | Lead's own correction | `v84-<iter>.<role>.lead.c.<n>`               | harness      |
 | Architect correction  | `v84-<iter>.architect.c.<n>`                 | harness      |
-| Convention proposal   | `v84-<iter>.<source>.{conv}.<n>`             | harness      |
-| Decision proposal     | `v84-<iter>.<source>.{dec}.<n>`              | harness      |
+| Rule proposal         | `v84-<iter>.<source>.rule.<n>`               | harness      |
 
 `<source>` is `<role_tag>` for writer, `<role_tag>.<reviewer_tag>`
 for reviewer, `architect` for architect, `<role_tag>.lead` for
-lead-authored. Lead-authored conv/dec records land directly with
+lead-authored. Lead-authored rule records land directly with
 `status: accepted` (lead is the role's authority); writer / reviewer
 raises land `pending` until the lead verdicts them.
 
@@ -78,32 +84,40 @@ The harness has a custom YAML representer registered on
 newlines to `|` style on dump. Agents are also told via
 instruction to use `|` for every prose field. Defence in depth.
 
-## The marker pattern
+## On-the-wire format: JSON
 
-Every agent's system prompt ends with:
+The wire format is JSON, not YAML. Every stage owns a
+`<stage>.md` (prose) plus a `<stage>.schema.json` (response
+shape) under `v84-docs/instructions/<group>/`.
 
-```
-When finished, the **first non-thinking line** must be exactly:
+`call_json` augments the system prompt with a `## Response
+format` block built from the schema, sends
+`response_format: {"type": "json_object"}`, parses with
+`json.loads`, validates against the schema, and retries up to
+`cfg.retries` times on parse or validation failure (sampling
+fresh each retry — no echo of the bad output).
 
-====== MY RESPONSE ======
+There is no marker pattern. Earlier versions used a
+`====== MY RESPONSE ======` marker before a YAML body; that
+worked but failed ~20% of the time as weak models broke
+indentation or wandered into prose. Switching to JSON Schema with
+provider-side JSON enforcement collapsed the failure rate, so the
+marker is gone.
 
-[then the YAML response]
-```
-
-Why:
-- Reasoning models (Qwen3, DeepSeek-R1, etc.) emit
-  `<think>…</think>` blocks. The marker sits after thinking so we
-  can find it after stripping.
-- The marker is load-bearing: `llm.client.call` looks for it and
-  retries on absence.
-- "First non-thinking line" handles all reasoning conventions
-  (including ones that don't use `<think>` tags).
-
-Six equals signs each side, single spaces. Do not vary.
+See [llm-format.md](llm-format.md) for the full wire-format
+spec — schema subset supported, retry semantics, streaming
+snapshots, MultiSpinner integration, log file naming.
 
 ## Instruction file pattern
 
-Every `instructions/**/*.md` follows the same shape:
+Every stage is a pair: `instructions/<group>/<stem>.md` carries
+the prose; `instructions/<group>/<stem>.schema.json` carries the
+response shape.
+
+The `.md` is pure prose. What the agent is, what it receives,
+when to accept / reject, what to think about. No JSON examples,
+no schema details, no "respond with JSON" boilerplate — that's
+auto-generated from the schema.
 
 ```markdown
 # <stage> — agent instruction
@@ -120,45 +134,32 @@ Every `instructions/**/*.md` follows the same shape:
 <iteration stages: scope discipline + project-size calibration block>
 <init stages: numbered constraints the agent must respect>
 
-Iteration stages (plan, draft, review, lead, architect, patch) use
-**Calibrate to project scope** — output should match what this
-iteration is actually building, no production-scale concerns on a
-demo. Init stages (suggest-roles, suggest-stack, decompose) use
-**Rules** — numbered list of constraints (prefer fewer roles, use
-only the fields you're given, no tech choices in tasks, etc.).
-A stage may also include both: an iteration stage with hard
-procedural constraints (patch's mechanical apply rules) carries
-**Rules** alongside **Calibrate**.
+## What to emit
 
-## Output Format
-
-**Think as long as you need before submitting.** Use the thinking
-phase to <stage-specific guidance>. Longer thinking is fine —
-longer *response* is not.
-
-When finished, the **first non-thinking line** must be exactly:
-
-====== MY RESPONSE ======
-
-After the marker emit **valid YAML** with up to <N> top-level
-fields. <stage-specific guidance>
-
-- `field_one`: <semantic + schema>
-- `field_two`: <semantic + schema>
-
-**Every prose field uses `|` block scalar.** That covers ...
-
-### Output Example
-
-[concrete YAML example]
+<short description of the named fields the response carries —
+high-level only; the schema and example come from the .json>
 ```
 
-This shape was tuned empirically — the marker rule + literal
-example template + per-field combined-purpose-and-schema
-descriptions had the lowest fail rate across local LLM models
-(Qwen, etc.) on long-running pipelines. Don't add fields to the
-agent's response unless they're load-bearing for downstream
-consumers.
+Iteration stages (plan, draft, review, review_validate, lead,
+architect, architect_validate, patch, classify-rules) use
+**Calibrate to project scope** — output should match what this
+iteration is actually building, no production-scale concerns on
+a demo. Init stages (suggest-roles, suggest-stack, suggest-
+structure, decompose) use **Rules** — numbered list of
+constraints. A stage may include both.
+
+The `.schema.json` is standard JSON Schema with one v84-specific
+convention: a top-level `examples: [{title, example}]` list. Each
+title labels the situation that example covers; the harness
+renders one `### <title>` block per example into the auto-built
+system-prompt addendum so the model can match its situation to a
+concrete shape.
+
+This shape was tuned empirically — schema-as-source-of-truth +
+titled examples + provider-side JSON enforcement had the lowest
+fail rate across local LLM models (Qwen, etc.) on long-running
+pipelines. Don't add fields to the agent's response unless
+they're load-bearing for downstream consumers.
 
 ## File naming
 
@@ -166,7 +167,7 @@ consumers.
 - Hyphenated for compound terms:
   `corrections-rejected.yaml`, `corrections-applied.yaml`.
 - Period-separated when grouping by category +
-  type: `<role>.conventions.yaml`, `global.decisions.yaml`,
+  type: `<role>.rules.yaml`, `global.rules.yaml`,
   `<role>.<reviewer_tag>.yaml`.
 
 YAML keys use snake_case (`task_id`, `next_step`, `for_role`).
@@ -184,19 +185,23 @@ visual win.
 - **Mixed structure + prose in one file.** A YAML record with a
   multi-line `proposal:` block scalar is fine. A markdown file
   with YAML front-matter and a structured body is not.
-- **JSON instead of YAML.** YAML wins on readability, comment
-  support, and block scalars. JSON is fine for wire formats; on
-  disk, YAML.
-- **Schemaless YAML.** Every YAML file type has an implicit schema
-  defined by the agent instruction + harness parser. Drift gets
-  caught at `_parse` time and the harness raises.
+- **JSON on disk.** YAML wins on readability, comment support,
+  and block scalars on persisted state. JSON is the wire format
+  for LLM responses (because schema enforcement collapses the
+  failure rate); on disk, YAML.
+- **Schemaless wire format.** Every stage has an explicit
+  `<stage>.schema.json`. The validator (`llm.client._validate_against_schema`)
+  rejects drift after parse and triggers a retry.
 
 ## Summary
 
-- YAML for structure, `.md` for free-form agent prose.
+- YAML on disk, JSON Schema on the wire.
+- `.md` for free-form agent prose; `<stage>.md` is paired with
+  `<stage>.schema.json`.
 - `_id` for unique handles, `_tag` for category slugs.
-- `|` block scalar for every prose field.
-- Marker `====== MY RESPONSE ======` on every agent response.
-- `instructions/**/*.md` follows the same five-section template.
+- `|` block scalar for every prose field on disk.
+- Provider-side `response_format: json_object` + per-stage JSON
+  Schema. No marker.
+- `instructions/<group>/<stem>.{md,schema.json}` per stage.
 - File names lowercase, hyphen-separated, period for category groups.
 - Iteration numbers are plain integers without padding.

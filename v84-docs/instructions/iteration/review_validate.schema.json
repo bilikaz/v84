@@ -1,0 +1,81 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["corrections", "rules"],
+  "description": "Two separate vote lists. `corrections` covers pending reviewer corrections; `rules` covers pending rule proposals. Both arrays are required. Use empty array when nothing to vote on in that category.",
+  "properties": {
+    "corrections": {
+      "type": "array",
+      "description": "One vote per pending reviewer correction.",
+      "items": {
+        "type": "object",
+        "required": ["id", "verdict"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The pending correction's id, copied verbatim."
+          },
+          "verdict": {
+            "enum": ["accept", "reject"]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required when verdict=reject. One short prose line stating why."
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "description": "One vote per pending rule proposal.",
+      "items": {
+        "type": "object",
+        "required": ["id", "verdict"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The pending rule proposal's id, copied verbatim."
+          },
+          "verdict": {
+            "enum": ["accept", "reject"]
+          },
+          "text": {
+            "type": "string",
+            "description": "Required when verdict=accept. The final wording, picked or reworded from the proposal/alternatives."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required when verdict=reject. One short prose line stating why."
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Both pending corrections and pending rule proposals exist",
+      "example": {
+        "corrections": [
+          {"id": "v84-1.frontend.primitives.c.1", "verdict": "accept"},
+          {"id": "v84-1.frontend.primitives.c.2", "verdict": "reject", "reason": "Out of scope for this iteration's demo target."}
+        ],
+        "rules": [
+          {"id": "v84-1.frontend.api-boundary.rule.1", "verdict": "accept", "text": "Stay fully self-contained: system fonts only, no third-party requests."},
+          {"id": "v84-1.frontend.api-boundary.rule.2", "verdict": "reject", "reason": "Conflicts with rule.1 on third-party CDN policy."}
+        ]
+      }
+    },
+    {
+      "title": "Only pending corrections, no pending rule proposals",
+      "example": {
+        "corrections": [
+          {"id": "v84-1.devops.infra.c.1", "verdict": "accept"},
+          {"id": "v84-1.devops.infra.c.2", "verdict": "accept"}
+        ],
+        "rules": []
+      }
+    }
+  ]
+}

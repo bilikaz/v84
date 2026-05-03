@@ -63,6 +63,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.status:
         return _print_status(project_dir)
 
+    if args.test_server is not None:
+        # Stand up the local playground and block until Ctrl+C. Imports
+        # locally so the rest of v84.py never pays the http.server cost.
+        import test_server
+        return test_server.main([
+            "--port", str(args.test_server),
+            "--project", str(project_dir),
+        ])
+
     if args.llm_set is not None or args.llm_set_multi is not None:
         # Pick which tier we're operating on. If both flags are given,
         # operate on each in turn so a single command can configure both.
@@ -389,6 +398,19 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--status",
         action="store_true",
         help="Print detected project state and exit. No LLM calls.",
+    )
+    p.add_argument(
+        "--test-server",
+        nargs="?",
+        const=8000,
+        default=None,
+        type=int,
+        metavar="PORT",
+        help="Launch the local stage-test web playground and exit. "
+             "Default port 8000; pass a port to override. Open "
+             "http://localhost:<PORT>/ in a browser to send custom "
+             "user_msgs to any stage and inspect the parse + validate "
+             "result.",
     )
     return p.parse_args(argv)
 

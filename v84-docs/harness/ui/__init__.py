@@ -3,9 +3,13 @@ ui — terminal UI surface for the harness.
 
 Two kinds of helpers live here, one file per primitive:
 
-    Spinner          (spinner.py) — live-elapsed progress for long
-                     blocking calls. Stays on the main terminal,
-                     uses \\r overwrites. Not a full-screen UI.
+    Spinner          (spinner.py) — process-wide singleton spinner.
+                     Every LLM call (via call_json or call_many)
+                     registers a row automatically; callers don't
+                     manage the lifecycle. Use `spinner.log(msg)`
+                     to print informational lines that scroll above
+                     the painted block instead of
+                     `print(..., file=sys.stderr)`.
 
     Painters — full-screen interactive UIs that take over the
     alt-screen buffer for the duration of a user choice. They
@@ -26,20 +30,24 @@ Adding a new UI primitive:
     3. Callers can `from ui import <name>`.
 """
 
+from . import spinner
 from .checklist import checklist
+from .confirm_modal import confirm_modal
 from .detail_list import detail_list
 from .field_editor import field_editor
-from .multi_spinner import MultiSpinner
+from .review_list import review_list
 from .single_select import single_select
 from .spinner import Spinner
 from .text_input import text_input
 
 __all__ = [
-    "MultiSpinner",
     "Spinner",
     "checklist",
+    "confirm_modal",
     "detail_list",
     "field_editor",
+    "review_list",
     "single_select",
+    "spinner",
     "text_input",
 ]

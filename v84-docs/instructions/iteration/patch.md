@@ -14,8 +14,8 @@ same shape as the original draft.
 - Your role's repo layout — the layout type and the named sections
   this role owns with their paths. Use these section paths in every
   action's `files:` field.
-- Conventions and decisions that apply to your role — already
-  scope-filtered. Treat them as binding rules.
+- Rules that apply to your role — already scope-filtered. Treat
+  them as binding.
 - Your role's accumulated implementation history when present —
   every action this role has shipped in past iterations, grouped
   by iteration → task → actions. Treat it as the current state of
@@ -40,6 +40,14 @@ same shape as the original draft.
   the correction's detail alongside it. Replace original wording
   only when the correction explicitly contradicts it. Keep the same
   `id`.
+- A `fix` correction may also target the role's draft **as a whole**
+  rather than a single action — recognisable by `task_id` set to the
+  iteration's parent task (e.g. `v84-1`) and **no `action_id`**.
+  These come from the harness when a rule lands accepted and your
+  existing actions need to be reviewed against the new rule. The
+  correction's prose embeds the rule. For these: scan every action
+  in your draft, update any that don't yet conform to the rule, and
+  leave compliant ones unchanged.
 - For each `missing` correction: add a new action under the named
   `task_id`. New actions continue the per-task numbering: if
   `v84-1.3` already has actions `.1` and `.2`, the new one is `.3`.
@@ -47,6 +55,32 @@ same shape as the original draft.
 - Do not invent corrections. Apply only what's in the corrections
   list. If a correction is unclear, prefer a faithful interpretation
   over a creative rewrite.
+
+## Action vs verify
+
+Each action carries an imperative `action:` prose plus an optional
+`verify:` block of observable assertions, one per line. Same
+boundary as draft: action = what to build, verify = what must
+observably hold once the action's output is in place. See draft
+instructions for what belongs in verify and what doesn't.
+
+When applying corrections:
+
+- A `fix` correction may target the `action:` prose, the `files:`
+  list, the `depends:`, OR the `verify:` rows — whichever the
+  correction's wording calls out. Most corrections are additive;
+  add verify rows alongside existing ones, don't replace unless
+  the correction explicitly contradicts.
+- A `missing` correction adds a brand-new action under the named
+  `task_id`, with `verify:` rows from the start. Verify-only gaps
+  on an existing action arrive as a `fix` correction with that
+  action's `action_id`, not as `missing`.
+- A `remove` correction drops the whole action, verify rows
+  included.
+
+If verify-shaped wording leaks into an action's `action:` prose
+during your patch ("ensure X", "must return Y"), move it to
+`verify:` while you're touching the action.
 
 ## Calibrate to project scope
 
@@ -72,81 +106,42 @@ Anything technically correct but oversized for the project's scope
 is noise. Hold to what would actually move this iteration forward,
 given how big the thing being built is.
 
-## Output Format
+## What to emit
 
-**Think as long as you need before submitting.** Use the thinking
-phase to walk every correction, locate the action it touches,
-decide the new prose / files / depends. Your response carries the
-**full** patched actions list — every surviving action verbatim,
-every fixed action with its extended prose, every new action from
-`missing` corrections. Response size scales with draft size; that
-is expected. Don't trim surviving prose to look concise.
+Think as long as you need. Keep the response short.
 
-When finished, the **first non-thinking line** must be exactly:
+Respond with a single JSON object with two keys: `actions` and
+`rules`. Both keys are required. Same shape as draft. Use the
+`rules` list sparingly — emit an empty `rules` array when this
+patch raises nothing new.
 
-====== MY RESPONSE ======
+`actions` is the new draft, full ordered list. Each entry:
 
-After the marker emit **valid YAML** with up to three top-level
-fields. Use `needs_convention` / `needs_decision` sparingly —
-every flag costs a downstream debate.
+- `id`: same id for surviving and fixed actions. New
+  `<task_id>.<role_tag>.<n>` for actions added per a `missing`
+  correction. Continue per-task numbering.
+- `action`: imperative prose. The concrete change.
+- `files`: file paths the action touches.
+- `depends`: action ids this one depends on. Empty list when none.
+- `verify`: observable assertions, one per line. Omit entirely
+  for non-runnable artifacts.
 
-- `actions`: an ordered list of action entries (the new draft).
-  Each entry has:
-  - `id`: same id for surviving / fixed actions; new
-    `<task_id>.<role_tag>.<n>` continuing per-task numbering for
-    actions added per a `missing` correction.
-  - `action`: block scalar (`|` style) prose describing the
-    concrete change.
-  - `files`: list of file paths the action touches.
-  - `depends` (optional): list of other action ids this action
-    depends on. Drop the field entirely when there are none.
-- `needs_convention` (optional): list of `{proposal, alternatives}`
-  proposing a durable rule that should apply across this and future
-  iterations. Drop the field entirely when nothing to flag. Ids are
-  assigned by the harness — do not emit them.
-- `needs_decision` (optional): list of `{proposal, alternatives}`
-  proposing a one-time ruling for this iteration only. Drop the
-  field entirely when nothing to flag. Ids are assigned by the
-  harness.
+`rules` are rule proposals raised during this patch. Each entry:
 
-**Every prose field uses `|` block scalar.** That covers `action`,
-every `proposal`, and every `alternatives` entry. Plain scalars
-break when prose contains colons followed by a space (`(foo: bar)`),
-quotes, or other YAML-special chars. Block scalars never do.
+- `proposal`: the rule wording.
+- `alternatives`: 1 to 3 other viable wordings.
 
-### Output Example
+### How to patch each action
 
-Existing draft had two actions under task `v84-1.1`; the
-correction list says "fix v84-1.1.frontend.2" and "missing under
-v84-1.3". Resulting patched output:
+Your response carries the full patched actions list. Every
+surviving action verbatim. Every fixed action with extended
+prose. Every new action from a `missing` correction. Response
+size scales with draft size. Do not trim surviving prose to look
+concise.
 
-```
-====== MY RESPONSE ======
-
-actions:
-  - id: v84-1.1.frontend.1
-    action: |
-      Add the responsive page shell to index.html — meta viewport,
-      a full-viewport flex container, and a centred .canvas div sized
-      via min(80vw, 80vh) for fluid scaling on mobile and desktop.
-    files:
-      - index.html
-  - id: v84-1.1.frontend.2
-    action: |
-      Implement the atmospheric layer in index.html <style>: a .sun
-      block with radial gradient and box-shadow glow, three .cloud
-      elements, and an @keyframes drift loop with staggered delays.
-      Add `will-change: transform` to .cloud for smooth GPU compositing
-      (per the round-1 fix correction).
-    files:
-      - index.html
-    depends:
-      - v84-1.1.frontend.1
-  - id: v84-1.3.frontend.1
-    action: |
-      Add a `prefers-reduced-motion: reduce` media query in the
-      <style> block that disables every keyframe (per the round-1
-      missing correction).
-    files:
-      - index.html
-```
+Think verify-first when corrections introduce new behaviour. For
+any action you rewrite (`fix`) or add (`missing`), first picture
+the observable assertions that would tell the implementer the
+correction is honored. Write those as `verify` rows. Then write
+the imperative `action` change. Surviving actions keep their
+existing verify verbatim unless a correction touches it.

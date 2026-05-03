@@ -17,8 +17,9 @@ writers/reviewers when they only need their own slice).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Callable, Optional
 
 import yaml
 
@@ -234,7 +235,7 @@ def _walk_plan_subtasks(branch: list[dict], lines: list[str]) -> None:
 
 
 # -----------------------------------------------------------------------------
-# Conventions + decisions — single-file lists, role-scope filtered
+# Rules — single-file lists, role-scope filtered
 # -----------------------------------------------------------------------------
 
 def _load_records(p: Path) -> list[dict]:
@@ -264,91 +265,65 @@ def _current_iteration_n(project_dir: Path) -> Optional[int]:
         return None
 
 
-def conventions_block(
+def rules_block(
     project_dir: Path, role: Optional[str] = None,
 ) -> str:
-    """Active conventions in scope.
+    """Active rules in scope.
 
-    A convention is by definition approved — root records carry no
+    A rule is by definition approved — root records carry no
     status (they're already user-promoted), and iteration records
     only count when status == accepted. The pending and rejected
     variants live in their own prefixed helpers.
 
     Sources:
-        - v84/global.conventions.yaml              (root, global)
-        - v84/<role>.conventions.yaml              (root, role-scoped)
-        - iterations/<n>/global.conventions.yaml   (status: accepted)
-        - iterations/<n>/<role>.conventions.yaml   (status: accepted)
+        - v84/global.rules.yaml              (root, global)
+        - v84/<role>.rules.yaml              (root, role-scoped)
+        - iterations/<n>/global.rules.yaml   (status: accepted)
+        - iterations/<n>/<role>.rules.yaml   (status: accepted)
     """
     return _render_records(
-        _load_rules(project_dir, role, "conventions", status="accepted")
+        _load_rules(project_dir, role, status="accepted")
     )
 
 
-def decisions_block(
+def pending_rules_block(
     project_dir: Path, role: Optional[str] = None,
 ) -> str:
-    """Active decisions in scope. Same source list as conventions_block."""
-    return _render_records(
-        _load_rules(project_dir, role, "decisions", status="accepted")
-    )
-
-
-def pending_conventions_block(
-    project_dir: Path, role: Optional[str] = None,
-) -> str:
-    """Pending conventions — current iteration only.
+    """Pending rules — current iteration only.
 
     Sources:
-        - iterations/<n>/global.conventions.yaml   (status: pending)
-        - iterations/<n>/<role>.conventions.yaml   (status: pending)
+        - iterations/<n>/global.rules.yaml   (status: pending)
+        - iterations/<n>/<role>.rules.yaml   (status: pending)
     """
     return _render_records(
-        _load_rules(project_dir, role, "conventions", status="pending")
+        _load_rules(project_dir, role, status="pending")
     )
 
 
-def pending_decisions_block(
+def rejected_rules_block(
     project_dir: Path, role: Optional[str] = None,
 ) -> str:
-    return _render_records(
-        _load_rules(project_dir, role, "decisions", status="pending")
-    )
-
-
-def rejected_conventions_block(
-    project_dir: Path, role: Optional[str] = None,
-) -> str:
-    """Rejected conventions — current iteration only.
+    """Rejected rules — current iteration only.
 
     Sources:
-        - iterations/<n>/global.conventions.yaml   (status: rejected)
-        - iterations/<n>/<role>.conventions.yaml   (status: rejected)
+        - iterations/<n>/global.rules.yaml   (status: rejected)
+        - iterations/<n>/<role>.rules.yaml   (status: rejected)
     """
     return _render_records(
-        _load_rules(project_dir, role, "conventions", status="rejected")
-    )
-
-
-def rejected_decisions_block(
-    project_dir: Path, role: Optional[str] = None,
-) -> str:
-    return _render_records(
-        _load_rules(project_dir, role, "decisions", status="rejected")
+        _load_rules(project_dir, role, status="rejected")
     )
 
 
 def _load_rules(
     project_dir: Path,
     role: Optional[str],
-    kind: str,
     *,
     status: str,
 ) -> list[dict]:
-    """Load rule records of `kind` ('conventions' or 'decisions')
-    filtered to `status` ('accepted' | 'pending' | 'rejected').
+    """Load rule records filtered to `status`
+    ('accepted' | 'pending' | 'rejected').
 
-    Root files (v84/global.<kind>.yaml + v84/<role>.<kind>.yaml) are
+    Root files (v84/global.rules.yaml + v84/<role>.rules.yaml) are
     treated as `accepted` (they're already user-approved at promotion
     time). Iteration files use their per-record `status` field.
     """
@@ -356,19 +331,19 @@ def _load_rules(
     root = project_dir / "v84"
 
     if status == "accepted":
-        out.extend(_load_records(root / f"global.{kind}.yaml"))
+        out.extend(_load_records(root / "global.rules.yaml"))
         if role:
-            out.extend(_load_records(root / f"{role}.{kind}.yaml"))
+            out.extend(_load_records(root / f"{role}.rules.yaml"))
 
     cur = _current_iteration_n(project_dir)
     if cur is not None:
         iter_dir = root / "iterations" / str(cur)
 
-        global_records = _load_records(iter_dir / f"global.{kind}.yaml")
+        global_records = _load_records(iter_dir / "global.rules.yaml")
         out.extend(r for r in global_records if r.get("status") == status)
 
         if role:
-            role_records = _load_records(iter_dir / f"{role}.{kind}.yaml")
+            role_records = _load_records(iter_dir / f"{role}.rules.yaml")
             out.extend(r for r in role_records if r.get("status") == status)
 
     return out
@@ -378,69 +353,34 @@ def _load_rules(
 # Corrections — round 2+ context for reviewers
 # -----------------------------------------------------------------------------
 
-def corrections_applied_block(
-    project_dir: Path, role: str, *, reviewer_tag: Optional[str] = None,
-) -> str:
+def corrections_applied_block(project_dir: Path, role: str) -> str:
     """Corrections the patch stage applied in the previous round.
 
     Empty on round 1 (the file is created by patch). On round 2+
-    reviewers read it to verify the patched draft honored what the
-    lead/architect asked for, and to avoid re-raising suggestions
-    that were already addressed.
-
-    When `reviewer_tag` is set, drops entries that originated from a
-    different reviewer of the same role (so each reviewer sees only
-    their own suggestions plus role-wide lead/architect entries —
-    avoids four reviewers all flagging the same other-lens concern).
-    Lead callers omit `reviewer_tag` and see everything.
+    every reader (any reviewer, lead) sees the full set so they
+    can avoid re-raising what was already addressed. Ids encode
+    source (reviewer / lead / architect) so the reader can tell.
     """
     cur = _current_iteration_n(project_dir)
     if cur is None:
         return ""
     p = (project_dir / "v84" / "iterations" / str(cur)
          / f"{role}.corrections-applied.yaml")
-    records = _filter_for_reviewer(_load_records(p), role, reviewer_tag)
-    return _render_corrections(records)
+    return _render_corrections(_load_records(p))
 
 
-def corrections_rejected_block(
-    project_dir: Path, role: str, *, reviewer_tag: Optional[str] = None,
-) -> str:
-    """Suggestions/corrections that the lead or architect rejected.
+def corrections_rejected_block(project_dir: Path, role: str) -> str:
+    """Corrections that the lead or architect rejected.
 
-    Round 2+ reviewers read this to avoid re-raising the same
-    concerns the lead or architect already dismissed. Same
-    `reviewer_tag` filter as corrections_applied_block.
+    Round 2+ context — readers avoid re-raising what was already
+    dismissed. All sources visible.
     """
     cur = _current_iteration_n(project_dir)
     if cur is None:
         return ""
     p = (project_dir / "v84" / "iterations" / str(cur)
          / f"{role}.corrections-rejected.yaml")
-    records = _filter_for_reviewer(_load_records(p), role, reviewer_tag)
-    return _render_corrections(records, include_rejected_by=True)
-
-
-def _filter_for_reviewer(
-    records: list[dict], role: str, reviewer_tag: Optional[str],
-) -> list[dict]:
-    """When `reviewer_tag` is set, drop suggestion records sourced
-    from a different reviewer of the same role. Lead-authored
-    (`v84-N.<role>.lead.c.M`) and architect-authored
-    (`v84-N.architect.c.M`) records are role-wide and always pass.
-    """
-    if reviewer_tag is None:
-        return records
-    out: list[dict] = []
-    for r in records:
-        rid = r.get("id", "")
-        parts = rid.split(".")
-        # Reviewer-sourced shape: v84-N.<role>.<reviewer>.s.<m>
-        if (len(parts) >= 5 and parts[1] == role and parts[3] == "s"
-                and parts[2] != reviewer_tag):
-            continue
-        out.append(r)
-    return out
+    return _render_corrections(_load_records(p), include_rejected_by=True)
 
 
 def _render_corrections(
@@ -454,7 +394,7 @@ def _render_corrections(
         rid = r.get("id", "?")
         verdict = r.get("verdict", "?")
         ref = r.get("action_id") or r.get("task_id") or "?"
-        text = (r.get("correction") or r.get("suggestion") or "").strip()
+        text = (r.get("correction") or "").strip()
         suffix = ""
         if include_rejected_by and r.get("rejected_by"):
             suffix = f"  (rejected by {r['rejected_by']})"
@@ -463,7 +403,7 @@ def _render_corrections(
 
 
 def _render_records(records: list[dict]) -> str:
-    """Render a list of convention/decision records as compact prose blocks.
+    """Render a list of rule records as compact prose blocks.
 
     For accepted records: id + the rule text. For rejected records:
     id + the proposal text + the rejection reason (so downstream
@@ -475,11 +415,11 @@ def _render_records(records: list[dict]) -> str:
     blocks: list[str] = []
     for r in records:
         rid = r.get("id", "?")
-        # `rule` is the canonical field for the active text (lead-set
-        # on accepted records, also used in main-folder records).
-        # `proposal` is the fallback for pending or rejected records
-        # (no `rule` set).
-        body = (r.get("rule") or r.get("proposal") or "").strip()
+        # `text` is the canonical field for the active rule text
+        # (lead-set on accepted records, also used in main-folder
+        # records). `proposal` is the fallback for pending or
+        # rejected records (no `text` set).
+        body = (r.get("text") or r.get("proposal") or "").strip()
         reason = (r.get("rejection_reason") or "").strip()
         if reason:
             body = f"{body}\n\n**rejected because:** {reason}"
@@ -588,27 +528,15 @@ def cached_stack_block(project_dir: Path, role: str, iter_dir: Path) -> str:
     )
 
 
-def cached_conventions_block(
+def cached_rules_block(
     project_dir: Path, role: Optional[str], iter_dir: Path,
 ) -> str:
-    """Cached conventions_block. Includes globals + role-scoped sources
+    """Cached rules_block. Includes globals + role-scoped sources
     from both project root and the current iteration."""
     return _cached(
-        name=f"conventions_block.{role or 'global'}",
-        sources=_rule_sources(project_dir, role, "conventions"),
-        render=lambda: conventions_block(project_dir, role=role),
-        iter_dir=iter_dir,
-    )
-
-
-def cached_decisions_block(
-    project_dir: Path, role: Optional[str], iter_dir: Path,
-) -> str:
-    """Cached decisions_block — same source set as conventions, kind=decisions."""
-    return _cached(
-        name=f"decisions_block.{role or 'global'}",
-        sources=_rule_sources(project_dir, role, "decisions"),
-        render=lambda: decisions_block(project_dir, role=role),
+        name=f"rules_block.{role or 'global'}",
+        sources=_rule_sources(project_dir, role),
+        render=lambda: rules_block(project_dir, role=role),
         iter_dir=iter_dir,
     )
 
@@ -628,21 +556,21 @@ def cached_role_history_block(
 
 
 def _rule_sources(
-    project_dir: Path, role: Optional[str], kind: str,
+    project_dir: Path, role: Optional[str],
 ) -> list[Path]:
-    """Source files conventions_block / decisions_block reads, in the
-    same order as `_load_rules`. Iteration files are derived from the
+    """Source files rules_block reads, in the same order as
+    `_load_rules`. Iteration files are derived from the
     current_iteration in core.yaml."""
     root = project_dir / "v84"
-    sources: list[Path] = [root / f"global.{kind}.yaml"]
+    sources: list[Path] = [root / "global.rules.yaml"]
     if role:
-        sources.append(root / f"{role}.{kind}.yaml")
+        sources.append(root / f"{role}.rules.yaml")
     cur = _current_iteration_n(project_dir)
     if cur is not None:
         iter_dir = root / "iterations" / str(cur)
-        sources.append(iter_dir / f"global.{kind}.yaml")
+        sources.append(iter_dir / "global.rules.yaml")
         if role:
-            sources.append(iter_dir / f"{role}.{kind}.yaml")
+            sources.append(iter_dir / f"{role}.rules.yaml")
     return sources
 
 
@@ -783,3 +711,389 @@ def project_layout_block(project_dir: Path) -> str:
             parts.append(head)
         parts.append("")
     return "\n".join(parts).rstrip()
+
+
+# -----------------------------------------------------------------------------
+# Declarative user-message builder
+# -----------------------------------------------------------------------------
+#
+# Each pipeline stage composes its prompt context as an ordered list of
+# user messages. Instead of every stage re-implementing that composition
+# by hand (one helper per block + manual append), each stage declares
+# what it wants via a spec dict and calls `build_user_msgs`.
+#
+# Spec shape:
+#   {
+#     "<kind>": <scope>,
+#     ...
+#   }
+#
+# Order is preserved (Python 3.7+ dicts). Each entry produces zero or
+# more user messages, in spec order. Empty data → block silently
+# dropped (no header for an empty list).
+#
+# Scope semantics:
+#   None / False / [] — block skipped (use this to make absences
+#                       explicit in the spec — listing every known
+#                       key with a value tells the reader exactly
+#                       what each stage does and doesn't include)
+#   True              — singleton block (e.g. plan, active_roles)
+#   "all"             — every active role
+#   ["global"]        — just the project-wide global scope (where
+#                       supported: layout, rules, and their
+#                       pending/rejected variants)
+#   [role, ...]       — those roles
+#   ["all", "global"] — every active role plus global
+#   "<string>"        — for `trailing`: the literal final-line string
+#
+
+@dataclass
+class _BuildCtx:
+    project_dir: Path
+    iter_dir: Path
+    parent: dict
+    iteration_n: int
+    all_roles: list[str]
+    role: Optional[str] = None  # focal role (writer, lead, reviewer)
+
+
+_Builder = Callable[["_BuildCtx", Any], list[str]]
+
+
+def build_user_msgs(
+    project_dir: Path,
+    parent: dict,
+    iteration_n: int,
+    spec: dict,
+    *,
+    role: Optional[str] = None,
+) -> list[str]:
+    """Compose the stage's user messages from a declarative spec.
+
+    `role` is the focal role for per-role stages (writer, reviewer,
+    lead, patch). Cross-role stages (architect) leave it None.
+    """
+    iter_dir = project_dir / "v84" / "iterations" / str(iteration_n)
+    profile_path = project_dir / "v84" / "profile.yaml"
+    all_roles = active_roles(profile_path)
+
+    ctx = _BuildCtx(
+        project_dir=project_dir,
+        iter_dir=iter_dir,
+        parent=parent,
+        iteration_n=iteration_n,
+        all_roles=all_roles,
+        role=role,
+    )
+
+    msgs: list[str] = []
+    for kind, scope in spec.items():
+        builder = _BUILDERS.get(kind)
+        if builder is None:
+            raise ValueError(
+                f"build_user_msgs: unknown spec key {kind!r}. "
+                f"Known keys: {sorted(_BUILDERS)}"
+            )
+        msgs.extend(builder(ctx, scope))
+    return msgs
+
+
+# ---------- scope resolution -------------------------------------------------
+
+def _resolve_scope(
+    scope: Any, all_roles: list[str], *, allow_global: bool = False,
+) -> list[str]:
+    """Turn a scope spec into a concrete list of role tags / 'global'.
+
+    Items are de-duplicated, order preserved.
+    """
+    if scope == "all":
+        return list(all_roles)
+    if isinstance(scope, str):
+        scope = [scope]
+    if not isinstance(scope, list):
+        return []
+    out: list[str] = []
+    for item in scope:
+        if item == "all":
+            out.extend(all_roles)
+        elif item == "global":
+            if allow_global:
+                out.append("global")
+            # else: silently drop — caller's domain doesn't have a global
+        else:
+            out.append(item)
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for s in out:
+        if s not in seen:
+            seen.add(s)
+            deduped.append(s)
+    return deduped
+
+
+def _title(role: str) -> str:
+    """Pretty-print a role tag for headers: 'frontend' → 'Frontend'."""
+    return role.replace("-", " ").replace("_", " ").title()
+
+
+def _dump_yaml(items: Any) -> str:
+    return yaml.safe_dump(
+        items,
+        default_flow_style=False,
+        sort_keys=False,
+        allow_unicode=True,
+        width=10000,
+    ).rstrip()
+
+
+# ---------- block builders ---------------------------------------------------
+
+def _b_plan(ctx: _BuildCtx, scope: Any) -> list[str]:
+    if not scope:
+        return []
+    return [f"## Iteration plan\n\n{plan_block(ctx.parent)}"]
+
+
+def _b_active_roles(ctx: _BuildCtx, scope: Any) -> list[str]:
+    if not scope:
+        return []
+    return [f"## Active roles\n\n{', '.join(ctx.all_roles)}"]
+
+
+def _b_stack(ctx: _BuildCtx, scope: Any) -> list[str]:
+    out: list[str] = []
+    for role in _resolve_scope(scope, ctx.all_roles):
+        block = cached_stack_block(ctx.project_dir, role, ctx.iter_dir).strip()
+        if block:
+            out.append(f"## {_title(role)} stack\n\n{block}")
+    return out
+
+
+def _b_layout(ctx: _BuildCtx, scope: Any) -> list[str]:
+    out: list[str] = []
+    for s in _resolve_scope(scope, ctx.all_roles, allow_global=True):
+        if s == "global":
+            block = project_layout_block(ctx.project_dir).strip()
+            if block:
+                out.append(f"## Repo layout (project)\n\n{block}")
+        else:
+            block = cached_layout_block(ctx.project_dir, s, ctx.iter_dir).strip()
+            if block:
+                out.append(f"## {_title(s)} repo layout\n\n{block}")
+    return out
+
+
+def _b_role_definition(ctx: _BuildCtx, scope: Any) -> list[str]:
+    """Role definition (responsibilities) — for stages that need to know
+    what each role owns (architect, lead)."""
+    out: list[str] = []
+    for role in _resolve_scope(scope, ctx.all_roles):
+        block = cached_roles_block(ctx.project_dir, role, ctx.iter_dir).strip()
+        if block:
+            out.append(f"## {_title(role)} role\n\n{block}")
+    return out
+
+
+def _b_history(ctx: _BuildCtx, scope: Any) -> list[str]:
+    out: list[str] = []
+    for role in _resolve_scope(scope, ctx.all_roles):
+        block = cached_role_history_block(
+            ctx.project_dir, role, ctx.iter_dir,
+        ).strip()
+        if block:
+            out.append(
+                f"## {_title(role)} implementation history\n\n"
+                f"What this role has shipped in past iterations. Build "
+                f"on top, don't redo.\n\n{block}"
+            )
+    return out
+
+
+def _b_actions(ctx: _BuildCtx, scope: Any) -> list[str]:
+    """Writer's action list per role — `iterations/<n>/<role>.yaml`."""
+    out: list[str] = []
+    for role in _resolve_scope(scope, ctx.all_roles):
+        f = ctx.iter_dir / f"{role}.yaml"
+        if f.exists():
+            text = f.read_text(encoding="utf-8").strip()
+            if text:
+                out.append(
+                    f"## {_title(role)} writer draft\n\n"
+                    f"```yaml\n{text}\n```"
+                )
+    return out
+
+
+def _b_corrections(ctx: _BuildCtx, scope: Any) -> list[str]:
+    """Lead's accepted corrections per role — `<role>.corrections.yaml`."""
+    from core import proposals  # local import — proposals doesn't import context
+    out: list[str] = []
+    for role in _resolve_scope(scope, ctx.all_roles):
+        recs = proposals.read_corrections(
+            ctx.project_dir, ctx.iteration_n, role,
+        )
+        if recs:
+            out.append(
+                f"## {_title(role)} lead corrections\n\n"
+                f"```yaml\n{_dump_yaml(recs)}\n```"
+            )
+    return out
+
+
+def _b_corrections_rejected(ctx: _BuildCtx, scope: Any) -> list[str]:
+    """Lead/architect rejected corrections — `<role>.corrections-rejected.yaml`."""
+    from core import proposals
+    out: list[str] = []
+    for role in _resolve_scope(scope, ctx.all_roles):
+        recs = proposals.read_rejected_corrections(
+            ctx.project_dir, ctx.iteration_n, role,
+        )
+        if recs:
+            out.append(
+                f"## {_title(role)} rejected corrections\n\n"
+                f"```yaml\n{_dump_yaml(recs)}\n```"
+            )
+    return out
+
+
+def _b_corrections_applied(ctx: _BuildCtx, scope: Any) -> list[str]:
+    """Patch-applied corrections per role (round 2+).
+
+    All sources visible — every reader (any reviewer, lead) sees the
+    full set; ids encode source so the reader can tell who raised
+    what. Reviewers don't validate the patch; they just avoid
+    re-raising what was already raised.
+    """
+    out: list[str] = []
+    for role in _resolve_scope(scope, ctx.all_roles):
+        block = corrections_applied_block(ctx.project_dir, role).strip()
+        if block:
+            out.append(
+                f"## {_title(role)} corrections raised previously "
+                f"(and applied)\n\n"
+                f"Don't re-raise these — already raised in this iteration.\n\n"
+                f"{block}"
+            )
+    return out
+
+
+def _b_corrections_rejected_history(ctx: _BuildCtx, scope: Any) -> list[str]:
+    """Round 2+ context: corrections rejected earlier this iteration.
+
+    Distinct from `corrections_rejected` (current-round file dump) —
+    this one is the prose-rendered accumulated history. All sources
+    visible; ids encode who raised it.
+    """
+    out: list[str] = []
+    for role in _resolve_scope(scope, ctx.all_roles):
+        block = corrections_rejected_block(ctx.project_dir, role).strip()
+        if block:
+            out.append(
+                f"## {_title(role)} corrections raised previously "
+                f"(and rejected)\n\n"
+                f"Don't re-raise these — already dismissed this iteration.\n\n"
+                f"{block}"
+            )
+    return out
+
+
+def _b_rules(ctx: _BuildCtx, scope: Any) -> list[str]:
+    out: list[str] = []
+    for s in _resolve_scope(scope, ctx.all_roles, allow_global=True):
+        if s == "global":
+            block = rules_block(ctx.project_dir, role=None).strip()
+            if block:
+                out.append(f"## Active global rules\n\n{block}")
+        else:
+            block = cached_rules_block(
+                ctx.project_dir, s, ctx.iter_dir,
+            ).strip()
+            if block:
+                out.append(
+                    f"## {_title(s)} rules in scope\n\n{block}"
+                )
+    return out
+
+
+def _b_rules_pending(ctx: _BuildCtx, scope: Any) -> list[str]:
+    out: list[str] = []
+    for s in _resolve_scope(scope, ctx.all_roles, allow_global=True):
+        if s == "global":
+            block = pending_rules_block(ctx.project_dir, role=None).strip()
+            if block:
+                out.append(f"## Pending global rules\n\n{block}")
+        else:
+            block = pending_rules_block(ctx.project_dir, role=s).strip()
+            if block:
+                out.append(
+                    f"## {_title(s)} pending rule proposals\n\n{block}"
+                )
+    return out
+
+
+def _b_rules_rejected(ctx: _BuildCtx, scope: Any) -> list[str]:
+    out: list[str] = []
+    for s in _resolve_scope(scope, ctx.all_roles, allow_global=True):
+        block = rejected_rules_block(
+            ctx.project_dir, role=None if s == "global" else s,
+        ).strip()
+        if block:
+            label = "global" if s == "global" else _title(s)
+            out.append(
+                f"## {label} rules rejected this iteration\n\n"
+                f"Don't re-propose without addressing the recorded reason.\n\n"
+                f"{block}"
+            )
+    return out
+
+
+def _b_corrections_pending(ctx: _BuildCtx, scope: Any) -> list[str]:
+    """Pending corrections per role — the lead's verdict input.
+
+    Reads `<role>.corrections-pending.yaml`: every correction
+    targeting this role merged from all sources (every reviewer +
+    architect), pre-verdict. Lead reads this whole list and
+    accept/rejects each entry by id.
+    """
+    from core import proposals
+    out: list[str] = []
+    for role in _resolve_scope(scope, ctx.all_roles):
+        pending = proposals.read_pending_corrections(
+            ctx.project_dir, ctx.iteration_n, role,
+        )
+        if pending:
+            out.append(
+                f"## {_title(role)} pending corrections "
+                f"({len(pending)})\n\n"
+                f"```yaml\n{_dump_yaml(pending)}\n```"
+            )
+    return out
+
+
+def _b_trailing(ctx: _BuildCtx, scope: Any) -> list[str]:
+    """Final user-facing instruction line — typically a one-liner like
+    'Synthesise across roles. Follow your output format exactly.'"""
+    if isinstance(scope, str) and scope.strip():
+        return [scope.strip()]
+    return []
+
+
+_BUILDERS: dict[str, _Builder] = {
+    "plan":                          _b_plan,
+    "active_roles":                  _b_active_roles,
+    "stack":                         _b_stack,
+    "layout":                        _b_layout,
+    "role_definition":               _b_role_definition,
+    "history":                       _b_history,
+    "actions":                       _b_actions,
+    "corrections":                   _b_corrections,
+    "corrections_rejected":          _b_corrections_rejected,
+    "corrections_applied":           _b_corrections_applied,
+    "corrections_rejected_history":  _b_corrections_rejected_history,
+    "rules":                         _b_rules,
+    "rules_pending":                 _b_rules_pending,
+    "rules_rejected":                _b_rules_rejected,
+    "corrections_pending":           _b_corrections_pending,
+    "trailing":                      _b_trailing,
+}

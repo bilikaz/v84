@@ -1,0 +1,85 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["corrections", "rules"],
+  "description": "Lead's optional additions on top of the post-verdict state. Empty arrays are the common case — silence is fine.",
+  "properties": {
+    "corrections": {
+      "type": "array",
+      "description": "Your own additions to the writer's punch list — concerns every reviewer missed.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["verdict", "correction"],
+        "properties": {
+          "verdict": {
+            "enum": ["fix", "missing", "remove"],
+            "description": "fix = writer wrote something wrong; missing = writer left a needed action out; remove = writer included something out of scope."
+          },
+          "action_id": {
+            "type": "string",
+            "description": "Required for fix and remove — the action id being fixed or removed, e.g. v84-1.3.frontend.1."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Required for missing — the task id an action is missing under, e.g. v84-1.3."
+          },
+          "correction": {
+            "type": "string",
+            "description": "Concise prose (1–3 sentences) stating the break and the change to make."
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "description": "Rules you'd enact for this role. Lead is the role's authority — these settle as accepted on the spot.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["proposal"],
+        "properties": {
+          "proposal": {
+            "type": "string",
+            "description": "The rule you'd enact."
+          },
+          "alternatives": {
+            "type": "array",
+            "description": "1–3 other viable forms of the same rule.",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "One or more concerns to raise",
+      "example": {
+        "corrections": [
+          {
+            "verdict": "missing",
+            "task_id": "v84-1.5",
+            "correction": "Add a prefers-reduced-motion media query that disables every keyframe animation."
+          }
+        ],
+        "rules": [
+          {
+            "proposal": "Every CSS animation block is wrapped in @media (prefers-reduced-motion: no-preference).",
+            "alternatives": [
+              "All animations gated by a single :root custom property; toggle from one place.",
+              "Animations always on; provide a small UI control to pause."
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Nothing to raise (the common case)",
+      "example": {
+        "corrections": [],
+        "rules": []
+      }
+    }
+  ]
+}

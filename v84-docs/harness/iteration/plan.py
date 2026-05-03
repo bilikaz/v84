@@ -32,9 +32,9 @@ import yaml
 from core import coreyaml, iter_status
 from core.context import active_roles, roles_block, stack_block
 from core.stage import Stage
-from core.util import default_log_dir, instruction_path
-from llm import LLMConfig, call
-from ui import Spinner, detail_list, field_editor, text_input
+from core.util import default_log_dir, load_instruction
+from llm import LLMConfig, call_json
+from ui import detail_list, field_editor, text_input
 
 
 def plan(
@@ -57,10 +57,7 @@ def plan(
     parent_id = parent["id"]
     iteration_n = _iteration_number(parent_id)
 
-    skill_file = instruction_path("iteration", "plan.md")
-    if not skill_file.exists():
-        raise FileNotFoundError(f"Instruction not found: {skill_file}")
-    system = skill_file.read_text(encoding="utf-8")
+    system, schema = load_instruction("iteration", "plan")
 
     # Stable context — same across every round of this plan call.
     profile_path = project_dir / "v84" / "profile.yaml"
@@ -78,8 +75,8 @@ def plan(
     qa: list[dict] = []
     attempt = 1
     response = _call_llm(
-        cfg, system,
-        base_msgs + ["Plan this iteration. Follow your output format exactly."],
+        cfg, system, schema,
+        base_msgs + ["Plan this iteration."],
         attempt=attempt,
     )
 
@@ -95,10 +92,10 @@ def plan(
 
             attempt += 1
             response = _call_llm(
-                cfg, system,
+                cfg, system, schema,
                 base_msgs + [
                     f"## Clarifications\n\n{_qa_block(qa)}",
-                    "Now produce sub-tasks (Shape A). Follow your output format.",
+                    "Now produce sub-tasks (Shape A — `tasks`).",
                 ],
                 attempt=attempt,
             )
@@ -126,14 +123,16 @@ def plan(
         revision = list(base_msgs)
         if qa:
             revision.append(f"## Clarifications\n\n{_qa_block(qa)}")
-        revision.append(f"## Previous proposal\n\n```yaml\n{response}\n```")
+        revision.append(
+            f"## Previous proposal\n\n```json\n{yaml.safe_dump(response, sort_keys=False)}\n```"
+        )
         revision.append(f"## User feedback\n\n{comment}")
         revision.append(
-            "Revise the sub-task list per the user's feedback. Keep the "
-            "same output format. Adjust whatever the comment requests; "
-            "leave the rest of the plan intact."
+            "Revise the sub-task list per the user's feedback. Adjust "
+            "whatever the comment requests; leave the rest of the plan "
+            "intact."
         )
-        response = _call_llm(cfg, system, revision, attempt=attempt)
+        response = _call_llm(cfg, system, schema, revision, attempt=attempt)
 
     # Accept path — assign ids, persist core.yaml + plan.yaml.
     coreyaml.assign_subtask_ids(parent_id, tasks)
@@ -143,8 +142,16 @@ def plan(
 
     plan_file = _write_plan_yaml(project_dir, iteration_n, parent_id, qa)
 
-    # Initialise the iteration's status — round 1, draft is up next.
-    iter_status.write(project_dir, iteration_n, round=1, next_step="draft")
+    # Initialise the iteration's status — round 1, pre-pass gate as
+    # the next step. The per-role pipeline isn't populated yet; the
+    # pre-pass user gate (user_rules_review) initialises it once the
+    # rule set has been settled.
+    iter_status.write(
+        project_dir, iteration_n,
+        round=1,
+        next_step=iter_status.STEP_RULES_LEAD,
+        roles=None,
+    )
 
     print(f"✓ wrote sub-tasks under {parent_id} in core.yaml", file=sys.stderr)
     print(f"✓ wrote {plan_file}", file=sys.stderr)
@@ -155,38 +162,37 @@ def plan(
 # LLM call wrapper
 # -----------------------------------------------------------------------------
 
-def _call_llm(cfg: LLMConfig, system: str, user_msgs: list[str],
-              *, attempt: int) -> str:
-    with Spinner(f"calling {cfg.model} @ {cfg.url}"):
-        return call(
-            cfg,
-            system=system,
-            user_msgs=user_msgs,
-            log_name=f"iter-plan-r{attempt}",
-            log_dir=default_log_dir(),
-        )
+def _call_llm(cfg: LLMConfig, system: str, schema: dict,
+              user_msgs: list[str], *, attempt: int) -> dict:
+    return call_json(
+        cfg,
+        system=system,
+        user_msgs=user_msgs,
+        response_schema=schema,
+        log_name=f"iter-plan-r{attempt}",
+        log_dir=default_log_dir(),
+    )
 
 
 # -----------------------------------------------------------------------------
 # Parsing — detect TASKS vs QUESTIONS
 # -----------------------------------------------------------------------------
 
-def _parse_response(yaml_text: str) -> dict:
+def _parse_response(data: dict) -> dict:
     """Return {'kind': 'tasks'|'questions', ...}.
 
-    Tasks shape carries a normalised recursive list under 'tasks'.
-    Questions shape carries a list of {question, suggestions} dicts.
+    Schema enforces both `tasks` and `questions` arrays present; the
+    one the model used has entries, the other is empty. Questions take
+    precedence — if both are populated, the model contradicted itself
+    and we treat the response as a clarification request.
     """
-    try:
-        data = yaml.safe_load(yaml_text) or {}
-    except yaml.YAMLError:
-        return {"kind": "tasks", "tasks": []}
     if not isinstance(data, dict):
         return {"kind": "tasks", "tasks": []}
 
-    if isinstance(data.get("questions"), list):
+    raw_questions = data.get("questions") or []
+    if isinstance(raw_questions, list) and raw_questions:
         out: list[dict] = []
-        for q in data["questions"]:
+        for q in raw_questions:
             if not isinstance(q, dict):
                 continue
             qtext = q.get("question")

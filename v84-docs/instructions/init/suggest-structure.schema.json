@@ -1,0 +1,68 @@
+{
+  "type": "object",
+  "required": ["layout_type", "summary"],
+  "description": "Repository layout. Top level: `layout_type`, `summary`, optional `global`, plus one key per active role (each holding a list of {name, path, notes?} entries).",
+  "properties": {
+    "layout_type": {
+      "enum": ["monorepo", "single-app", "flat", "scripts"]
+    },
+    "summary": {
+      "type": "string",
+      "description": "2–4 sentences explaining the layout choice and any trade-offs worth flagging."
+    }
+  },
+  "additionalProperties": {
+    "type": "array",
+    "description": "Sections this scope owns — one entry per `{name, path, notes?}` artefact category.",
+    "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-friendly slug (e.g. `app`, `pages`, `components`, `entities`, `tests`)."
+        },
+        "path": {
+          "type": "string",
+          "description": "File or directory path relative to the project root."
+        },
+        "notes": {
+          "type": "string",
+          "description": "One-line explanation of what lands at this path. Omit (empty string) when self-evident."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Monorepo layout with frontend, backend, and devops sections",
+      "example": {
+        "layout_type": "monorepo",
+        "summary": "Monorepo with separate frontend and backend apps under apps/. Frontend uses Next.js so we surface a stories/ section; backend uses NestJS so modules/ + entities/ get distinct sections. DevOps lives at the repo root since compose and CI are project-wide.",
+        "global": [
+          {"name": "workspace", "path": "pnpm-workspace.yaml", "notes": "Lists apps/* and packages/*."},
+          {"name": "root_package", "path": "package.json", "notes": "Root with private:true and shared dev tooling."},
+          {"name": "nvmrc", "path": ".nvmrc", "notes": ""}
+        ],
+        "frontend": [
+          {"name": "app", "path": "apps/web", "notes": "Next.js app root."},
+          {"name": "pages", "path": "apps/web/src/pages", "notes": "File-based routing."},
+          {"name": "components", "path": "apps/web/src/components", "notes": "Reusable UI primitives."},
+          {"name": "tests", "path": "apps/web/tests", "notes": ""}
+        ],
+        "backend": [
+          {"name": "api", "path": "apps/api", "notes": "NestJS service root."},
+          {"name": "modules", "path": "apps/api/src/modules", "notes": ""},
+          {"name": "entities", "path": "apps/api/src/database/entities", "notes": ""},
+          {"name": "tests", "path": "apps/api/tests", "notes": ""}
+        ],
+        "devops": [
+          {"name": "compose", "path": "docker/", "notes": "docker-compose files per environment."},
+          {"name": "ci", "path": ".github/workflows/", "notes": ""},
+          {"name": "scripts", "path": "scripts/", "notes": "Project-wide bash helpers."}
+        ]
+      }
+    }
+  ]
+}

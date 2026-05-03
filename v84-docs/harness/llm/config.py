@@ -37,6 +37,8 @@ from typing import Optional
 
 import yaml
 
+from core import safe_io
+
 from .client import LLMConfig, _probe_models
 
 
@@ -134,16 +136,42 @@ def resolve_llm(
         except (TypeError, ValueError):
             max_concurrency = 1 if tier == "single" else 4
 
-    # Persist the resolved tier back to its owning sink.
-    payload = {"url": url, "model": model, "max_concurrency": max_concurrency}
-    if profile_path and profile_path.exists():
-        _write_profile_llm_tier(profile_path, tier, payload)
+    # retries: how many times the call() loop will retry on transient
+    # failures (network, timeout, HTTP 5xx, 408/429, malformed JSON)
+    # AND on marker-missing model output. Default 3 — local cheap models
+    # benefit from a few extra attempts; reliable hosted endpoints can
+    # safely lower it to 1.
+    raw_retries = profile_tier.get("retries")
+    if raw_retries is None:
+        retries = 3
     else:
-        _write_cache_tier(tier, payload)
+        try:
+            retries = max(1, int(raw_retries))
+        except (TypeError, ValueError):
+            retries = 3
+
+    # Persist the resolved tier back to its owning sink — but ONLY
+    # when the payload differs from what's already there. Per-role
+    # pipelines call resolve_llm from every stage worker at every
+    # step; rewriting profile.yaml on every call is pointless I/O
+    # and used to be the trigger for the read-modify-write race that
+    # nuked the file. Steady-state calls now skip the write entirely.
+    payload = {
+        "url": url, "model": model,
+        "max_concurrency": max_concurrency,
+        "retries": retries,
+    }
+    if profile_path and profile_path.exists():
+        if profile_tier != payload:
+            _write_profile_llm_tier(profile_path, tier, payload)
+    else:
+        if cached_tier != payload:
+            _write_cache_tier(tier, payload)
 
     return LLMConfig(
         url=url, model=model, api_key=api_key,
         max_concurrency=max_concurrency,
+        retries=retries,
     )
 
 
@@ -181,25 +209,42 @@ def _read_profile_llm(profile_path: Path) -> dict:
 def _write_profile_llm_tier(profile_path: Path, tier: str, cfg: dict) -> None:
     """Update profile.yaml's `llm:` block in place — sets/overwrites
     one tier, leaves the other tier(s) intact.
-    """
-    current = _read_profile_llm(profile_path)
-    # Merge: keep other tiers, replace the one we're writing.
-    merged: dict[str, dict] = {}
-    for t in TIERS:
-        if t == tier:
-            merged[t] = cfg
-        elif isinstance(current.get(t), dict) and current[t]:
-            merged[t] = current[t]
 
-    block = render_llm_block(merged)
-    text = profile_path.read_text(encoding="utf-8")
-    if _LLM_BLOCK_RE.search(text):
-        text = _LLM_BLOCK_RE.sub(block + "\n", text, count=1)
-    else:
-        if not text.endswith("\n"):
-            text += "\n"
-        text += "\n" + block + "\n"
-    profile_path.write_text(text, encoding="utf-8")
+    Goes through `safe_io.update_text` so the read-modify-write is
+    serialised against itself and against any concurrent reader.
+    Without that, multi-role workers all calling `resolve_llm` at
+    once would race here: one thread's `write_text` truncates the
+    file and another thread's `read_text` (mid-window) would see an
+    empty string, fail the regex, and append a fresh `llm:` block to
+    the truncated content — silently nuking the rest of profile.yaml.
+    """
+    with safe_io.update_text(profile_path, default="") as holder:
+        # Re-read the llm block from inside the lock so we see the
+        # latest persisted state (some other thread may have written
+        # the same tier we're about to update with the same payload —
+        # idempotent, but a stale snapshot taken outside the lock
+        # could clobber a sibling tier the other thread just set).
+        current_data = yaml.safe_load(holder.text) or {}
+        current_llm = current_data.get("llm") if isinstance(current_data, dict) else None
+        if not isinstance(current_llm, dict):
+            current_llm = {}
+
+        merged: dict[str, dict] = {}
+        for t in TIERS:
+            if t == tier:
+                merged[t] = cfg
+            elif isinstance(current_llm.get(t), dict) and current_llm[t]:
+                merged[t] = current_llm[t]
+
+        block = render_llm_block(merged)
+        text = holder.text
+        if _LLM_BLOCK_RE.search(text):
+            text = _LLM_BLOCK_RE.sub(block + "\n", text, count=1)
+        else:
+            if text and not text.endswith("\n"):
+                text += "\n"
+            text += "\n" + block + "\n" if text else block + "\n"
+        holder.text = text
 
 
 def render_llm_block(llm: dict) -> str:

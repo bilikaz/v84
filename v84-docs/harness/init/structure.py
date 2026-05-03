@@ -39,9 +39,9 @@ import yaml
 
 from core.context import active_roles, roles_block, stack_block
 from core.stage import Stage
-from core.util import default_log_dir, instruction_path, project_v84_dir
-from llm import LLMConfig, call
-from ui import Spinner, field_editor
+from core.util import default_log_dir, load_instruction, project_v84_dir
+from llm import LLMConfig, call_json
+from ui import field_editor
 
 
 # -----------------------------------------------------------------------------
@@ -70,30 +70,26 @@ def suggest_structure(
     if not roles:
         raise RuntimeError(f"profile.yaml has no active_roles.")
 
-    skill_file = instruction_path("init", "suggest-structure.md")
-    if not skill_file.exists():
-        raise FileNotFoundError(f"Instruction not found: {skill_file}")
-    system = skill_file.read_text(encoding="utf-8")
+    system, schema = load_instruction("init", "suggest-structure")
 
     user_msgs = [
         f"## Project brief\n\n{brief}",
         f"## Active roles\n\n{roles_block(project_dir, roles)}",
         f"## Stack picks\n\n{stack_block(project_dir, roles=roles)}",
-        "Propose layout_type + per-role sections. "
-        "Follow your output format exactly.",
+        "Propose layout_type + per-role sections.",
     ]
 
     if cfg is None:
         raise ValueError("LLMConfig required — call via v84.py or pass cfg=")
 
-    with Spinner(f"calling {cfg.model} @ {cfg.url}"):
-        response = call(
-            cfg,
-            system=system,
-            user_msgs=user_msgs,
-            log_name="init-suggest-structure",
-            log_dir=default_log_dir(),
-        )
+    response = call_json(
+        cfg,
+        system=system,
+        user_msgs=user_msgs,
+        response_schema=schema,
+        log_name="init-suggest-structure",
+        log_dir=default_log_dir(),
+    )
 
     parsed = _parse(response, roles)
 
@@ -140,15 +136,12 @@ def suggest_structure(
 # LLM response parsing
 # -----------------------------------------------------------------------------
 
-def _parse(yaml_text: str, roles: list[str]) -> dict:
-    """Extract layout_type, summary, and per-role section lists.
-    Defensive: missing role → empty section list (user can add)."""
-    try:
-        data = yaml.safe_load(yaml_text) or {}
-    except yaml.YAMLError as exc:
-        raise RuntimeError(f"could not parse structure response as YAML: {exc}")
+def _parse(data: dict, roles: list[str]) -> dict:
+    """Reshape the schema-validated response into layout_type, summary,
+    and per-role section lists. Defensive: missing role → empty section
+    list (user can add via the editor)."""
     if not isinstance(data, dict):
-        raise RuntimeError("structure response is not a YAML mapping")
+        raise RuntimeError("structure response was not a mapping")
 
     layout_type = (data.get("layout_type") or "single-app").strip()
     summary = (data.get("summary") or "").strip()

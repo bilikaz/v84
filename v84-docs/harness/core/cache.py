@@ -2,7 +2,7 @@
 cache.py — Per-iteration disk cache for rendered context blocks.
 
 Many stages (draft, review, lead, patch) call the same context
-builders — `roles_block(frontend)`, `conventions_block(frontend)`,
+builders — `roles_block(frontend)`, `rules_block(frontend)`,
 `role_history_block(frontend)`, etc. — over and over within one
 iteration. Each call reads the same source YAML and produces the
 same markdown.

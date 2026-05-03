@@ -1,0 +1,88 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["actions", "rules"],
+  "description": "Per-role draft for one iteration. `rules` defaults to an empty array — use sparingly.",
+  "properties": {
+    "actions": {
+      "type": "array",
+      "description": "Ordered list of concrete actions this role will perform.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "action", "files"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "<task_id>.<role_tag>.<n> — the task id this action implements, your role_tag, and a per-action <n> starting at 1 inside each task."
+          },
+          "action": {
+            "type": "string",
+            "description": "Imperative prose describing the concrete change to build."
+          },
+          "files": {
+            "type": "array",
+            "description": "File paths the action touches.",
+            "items": {"type": "string"}
+          },
+          "depends": {
+            "type": "array",
+            "description": "Other action ids this action depends on.",
+            "items": {"type": "string"}
+          },
+          "verify": {
+            "type": "string",
+            "description": "Observable assertions that must hold once the action's output is in place — one per line. Omit entirely for non-runnable artifacts."
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "description": "Rule proposals for the role. Use sparingly.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["proposal"],
+        "properties": {
+          "proposal": {"type": "string"},
+          "alternatives": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Per-role draft for one iteration",
+      "example": {
+        "actions": [
+          {
+            "id": "v84-1.1.frontend.1",
+            "action": "Add the responsive page shell to index.html: meta viewport, full-viewport flex container, and a centred .canvas div sized via min(80vw, 80vh).",
+            "files": ["index.html"],
+            "depends": [],
+            "verify": "Loading index.html shows a centred .canvas sized via min(80vw, 80vh).\nResizing the window keeps the canvas centred and proportional."
+          },
+          {
+            "id": "v84-1.2.frontend.1",
+            "action": "Implement the atmospheric layer in index.html <style>: a .sun block with radial gradient and three .cloud elements with an @keyframes drift loop.",
+            "files": ["index.html"],
+            "depends": ["v84-1.1.frontend.1"],
+            "verify": "Sun and three clouds render inside .canvas.\nCloud .drift animation runs without console errors."
+          }
+        ],
+        "rules": [
+          {
+            "proposal": "Every CSS animation block is wrapped in @media (prefers-reduced-motion: no-preference).",
+            "alternatives": [
+              "All animations gated by a single :root custom property; toggle from one place."
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["corrections", "rules"],
+  "description": "One reviewer's lens on a role's draft. Both arrays default to empty — common outcome is `corrections: []`, no rules.",
+  "properties": {
+    "corrections": {
+      "type": "array",
+      "description": "Single-lens critiques on the writer's draft.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["verdict", "correction"],
+        "properties": {
+          "verdict": {
+            "enum": ["fix", "missing", "remove"],
+            "description": "fix = existing action has a problem; missing = a needed action is absent; remove = action is out of scope or duplicative."
+          },
+          "action_id": {
+            "type": "string",
+            "description": "Required for fix and remove — the action's id from the writer's draft."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Required for missing — the task id from the iteration plan that the new action should belong under."
+          },
+          "correction": {
+            "type": "string",
+            "description": "Concise prose (1–3 sentences) stating the issue and (where it applies) the fix."
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "description": "Rule proposals raised by this reviewer. Use sparingly.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["proposal"],
+        "properties": {
+          "proposal": {"type": "string"},
+          "alternatives": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Your lens has citable breaks to flag",
+      "example": {
+        "corrections": [
+          {
+            "verdict": "fix",
+            "action_id": "v84-1.2.frontend.1",
+            "correction": "Add will-change: transform on .cloud so drift animation stays smooth."
+          },
+          {
+            "verdict": "missing",
+            "task_id": "v84-1.2",
+            "correction": "Add a prefers-reduced-motion media query that disables tree growth and cloud drift."
+          }
+        ],
+        "rules": [
+          {
+            "proposal": "Every CSS animation block is wrapped in @media (prefers-reduced-motion: no-preference).",
+            "alternatives": [
+              "All animations gated by a single :root custom property; toggle from one place."
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Your lens has nothing to flag (the common case)",
+      "example": {
+        "corrections": [],
+        "rules": []
+      }
+    }
+  ]
+}

@@ -18,35 +18,13 @@ project.
    deliverable (typically backend, frontend, mobile, or data).
 3. Prefer fewer roles. Pick only what the brief clearly requires.
 
-## Output Format
+## What to emit
 
-**Think as long as you need before submitting.** Use the thinking
-phase to weigh each role against the brief and the criteria in the
-menu. Longer thinking is fine — longer *response* is not.
+Think as long as you need. Keep the response short.
 
-When finished, the **first non-thinking line** must be exactly:
+Respond with a single JSON object with two keys:
 
-====== MY RESPONSE ======
-
-After the marker emit **valid YAML** with two fields:
-
-- `roles`: a list whose entries are role-tags from the menu above.
-- `summary`: a 2-4 sentence block describing the overall shape of
-  this project and why these roles were picked together. The user
-  reads this just before confirming the selection.
-
-### Output Example
-
-```
-====== MY RESPONSE ======
-
-roles:
-  - backend
-  - frontend
-
-summary: |
-  Standard web app with a React SPA and a REST API. Backend for
-  the server layer, frontend for the SPA. No mobile, no heavy
-  data — normal CRUD is covered by the backend role.
-```
-
+- `roles`: list of role-tags from the menu. Use the tags verbatim.
+  Do not invent. Do not rename.
+- `summary`: 2 to 4 sentences. The overall shape of this project
+  and why these roles were picked together.

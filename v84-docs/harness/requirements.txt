@@ -3,7 +3,7 @@
 # Keep this file minimal. The harness leans on stdlib for everything
 # except YAML parsing — PyYAML is the one concession to avoid
 # hand-rolling a YAML subset parser for our config files (profile.yaml,
-# stack.yaml, core.yaml, role templates, convention/decision records).
+# stack.yaml, core.yaml, role templates, rule records).
 #
 # Install:
 #     pip install -r v84-docs/harness/requirements.txt

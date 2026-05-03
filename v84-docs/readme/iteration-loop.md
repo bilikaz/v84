@@ -4,7 +4,8 @@
 > breakages before code is written.
 
 A single iteration is one task from `core.yaml`. The cycle inside
-that iteration loops until validate finds nothing left to apply.
+that iteration loops until `architect_validate` finds nothing
+left to apply.
 
 ## Why a loop
 
@@ -26,39 +27,54 @@ for surfacing them before code lands.
 
 ```
 Round 1
-├── plan        →  decompose this iteration's task into sub-tasks
-├── draft       →  per-role writer drafts actions (parallel)
-├── review      →  per-role-per-lens reviewer suggestions (parallel)
-├── lead        →  per-role lead synthesises (parallel)
-├── architect   →  cross-role single call
-└── validate    →  cross-lead vote on architect's pending globals
-                   (single-veto, with rejection_reason captured),
-                   then count pending corrections:
-                   YES  →  round++, start patch (round 2)
-                   NO   →  hand off to user_review
+├── plan          →  decompose this iteration's task into sub-tasks
+├── draft         →  per-role writer drafts actions (parallel)
+├── review        →  per-role-per-lens reviewer corrections
+│                    (parallel) → merged into <role>.corrections-pending.yaml
+├── lead_round    →  TWO calls per role in parallel:
+│                    review_validate (verdicts on pending corrections
+│                    + rule proposals) AND lead.md (optional raises);
+│                    two-phase write applies verdicts then raises.
+├── architect     →  cross-role single call. Cross-role corrections
+│                    land in each affected role's pending file (NOT
+│                    directly in corrections.yaml); rules → globals.
+└── architect_validate
+                  →  one call per active lead, voting on:
+                       • pending architect globals (single-veto)
+                       • pending architect corrections targeting
+                         this role (only this lead's vote counts)
+                     Then count pending corrections in
+                     <role>.corrections.yaml across roles:
+                       YES  → round++, start patch (round 2),
+                              narrow active_roles to roles with
+                              pending corrections
+                       NO   → hand off to user_review
 
-Round 2 (or any later)
-├── patch       →  per-role writer applies corrections (parallel)
-├── review      →  re-evaluate the patched draft
-├── lead        →  re-synthesise
-├── architect   →  re-stitch cross-role
-└── validate    →  same checks; loop or close
+Round 2 (or any later — only the active_roles set runs)
+├── patch         →  per-role writer applies corrections (parallel)
+├── review        →  re-evaluate the patched draft
+├── lead_round    →  re-synthesise
+├── architect     →  re-stitch cross-role
+└── architect_validate
+                  →  same checks; loop or close
 
-After last validate (corrections empty)
-├── user_review →  user reviews accepted conv/dec, promotes to root,
-│                  writes tasks.md handoff, advances to finish.
-│                  (If user changed any rule's text → cycle restart
-│                   instead, back to draft with new rule set.)
+After last architect_validate (corrections empty)
+├── user_review   →  classify accepted rules (promote vs iteration-only),
+│                    user ticks/picks/edits via review_list, picks one of:
+│                       • continue   → promote, write tasks.md, advance
+│                                      to finish
+│                       • regenerate → promote, clear cycle artefacts,
+│                                      reset to round 1 / draft
 ├── (external implementer runs: writes code from tasks.md)
-└── finish      →  verify file existence + tag presence per action;
-                   gaps → write fix.md, stay at finish for re-run;
-                   pristine → append to documentation/<role>.yaml,
-                   close iteration.
+└── finish        →  verify file existence + tag presence per action;
+                     gaps → write fix.md, stay at finish for re-run;
+                     pristine → append to documentation/<role>.yaml,
+                     close iteration.
 ```
 
 Round 1 starts with `draft` (writer drafts from scratch). Round 2+
 starts with `patch` (writer applies the corrections that landed in
-the prior round's lead + architect output).
+the prior round's lead_round + architect_validate output).
 
 ## status.yaml drives everything
 
@@ -68,6 +84,7 @@ Every iteration carries one tracking file:
 # iterations/<n>/status.yaml
 round: 2
 next_step: patch
+active_roles: [frontend, backend]   # optional; narrowed by architect_validate
 ```
 
 - Created by `plan` once the iteration's sub-task plan settles
@@ -78,33 +95,38 @@ next_step: patch
   next.
 - Absence of `status.yaml` means the iteration hasn't started yet
   (only `plan` is ready).
+- `active_roles` is the per-round role set. Round 1 sees every
+  active role; `architect_validate` writes a narrowed list at
+  end-of-round so the next round's stages skip roles with no
+  pending corrections.
 
 The transitions:
 
-| After stage | Transition                                                          |
-|-------------|---------------------------------------------------------------------|
-| plan        | `iter_status.write(round=1, next_step="draft")`                     |
-| draft       | `iter_status.advance_to("review")`                                  |
-| review      | `iter_status.advance_to("lead")`                                    |
-| lead        | `iter_status.advance_to("architect")`                               |
-| architect   | `iter_status.advance_to("validate")`                                |
-| validate    | corrections pending → `iter_status.next_round_to("patch")` (round++)|
-|             | corrections empty   → `iter_status.advance_to("user_review")`       |
-| patch       | `iter_status.advance_to("review")`                                  |
-| user_review | no change → `iter_status.advance_to("finish")` (after promote + handoff)|
-|             | any rule edited → `_restart_cycle` → `{round: 1, next_step: draft}` |
-| finish      | gaps → write fix.md, stay at `finish` for re-run                    |
-|             | pristine → close iteration, `iter_status.advance_to("done")`        |
+| After stage          | Transition                                                              |
+|----------------------|-------------------------------------------------------------------------|
+| plan                 | `iter_status.write(round=1, next_step="draft")`                         |
+| draft                | `iter_status.advance_to("review")`                                      |
+| review               | `iter_status.advance_to("lead_round")`                                  |
+| lead_round           | `iter_status.advance_to("architect")`                                   |
+| architect            | `iter_status.advance_to("architect_validate")`                          |
+| architect_validate   | corrections pending → `iter_status.next_round_to("patch", active_roles=...)` |
+|                      | corrections empty   → `iter_status.advance_to("user_review")`           |
+| patch                | `iter_status.advance_to("review")`                                      |
+| user_review (continue)| `iter_status.advance_to("finish")` (after promote + handoff)           |
+| user_review (regen)  | `_restart_cycle` → `{round: 1, next_step: draft}`                       |
+| finish               | gaps → write fix.md, stay at `finish` for re-run                        |
+|                      | pristine → close iteration, `iter_status.advance_to("done")`            |
 
-The round counter ticks at the validate→patch transition. That's
-when "we're starting a new cycle" semantically. Validate itself
-sits in the round it ends.
+The round counter ticks at the architect_validate→patch
+transition. That's when "we're starting a new cycle" semantically.
+`architect_validate` itself sits in the round it ends.
 
 ## What the cycle stops on
 
 The architect's job is cross-role synthesis. When it has nothing
 to add — no corrections, no rejections, no global proposals — and
-no lead corrections remain pending, validate counts zero corrections
+no lead corrections remain pending after architect_validate's
+per-role lead vote, the corrections-presence check counts zero
 and routes to user_review.
 
 That's the stopping signal: **no corrections left to apply
@@ -122,21 +144,29 @@ rounds.
 See [four-layer-split.md](four-layer-split.md) for layer detail.
 Briefly:
 
-- **Writers** produce concrete actions in parallel per role.
+- **Writers** produce concrete actions in parallel per role
+  (`draft` round 1, `patch` round 2+).
 - **Reviewers** pass single-lens critiques in parallel per role
-  per lens.
-- **Leads** synthesise per role: accept/reject suggestions, settle
-  role-scoped conv/dec.
-- **Architect** stitches across roles: catches cross-role conflicts,
-  promotes patterns to global, rejects lead corrections that create
-  cross-role problems.
-- **Validate** counts what's left. **Patch** opens the next round.
+  per lens. Their corrections merge into one
+  `<role>.corrections-pending.yaml`.
+- **Leads** are split across two parallel calls per role under
+  `lead_round`: `review_validate` votes accept/reject on
+  pending reviewer corrections + rule proposals; `lead.md` adds
+  the lead's own raises on top.
+- **Architect** stitches across roles: catches cross-role
+  conflicts (deposited into each affected role's pending file),
+  promotes patterns to global, rejects lead corrections that
+  create cross-role problems.
+- **architect_validate** is the cycle-end gate: each lead votes
+  on architect-proposed globals (single-veto) AND on architect's
+  cross-role corrections targeting that role (only that lead's
+  vote counts). Then it counts what's left. **Patch** opens the
+  next round.
 
 ## What survives across rounds
 
-- `<role>.conventions.yaml` / `<role>.decisions.yaml` carry status
-  changes (pending → accepted / rejected) across rounds. Lead's
-  prior verdicts are preserved.
+- `<role>.rules.yaml` carries status changes (pending → accepted /
+  rejected) across rounds. Lead's prior verdicts are preserved.
 - `<role>.corrections-rejected.yaml` carries history — both lead-
   rejected and architect-rejected entries with `rejected_by` tags.
 - `<role>.corrections-applied.yaml` is the audit trail: when patch
@@ -149,10 +179,10 @@ LLM call logs (`.v84-logs/`).
 
 ## Concurrency
 
-Stages that fan out (draft, review, lead, patch) use `call_many`
-against the multi tier when configured (falls back to single if
-not). The tier's `max_concurrency` from `profile.yaml` caps
-in-flight calls:
+Stages that fan out (draft, review, lead_round, patch,
+architect_validate) use `call_many` against the multi tier when
+configured (falls back to single if not). The tier's
+`max_concurrency` from `profile.yaml` caps in-flight calls:
 
 ```yaml
 llm:
@@ -181,12 +211,18 @@ Architect always runs as a single call.
   so dropping it (or editing it) lets the user replay or skip
   steps.
 
-## Looking ahead
+## What's still rough
 
-Phase B fills in:
-- **patch**'s actual implementation (round-2+ writer with
-  `instructions/iteration/patch.md` already in place).
-- **user_review** UI gate that promotes accepted conv/dec to the
-  project root and closes the iteration.
-- **Cross-lead validation** of architect-proposed globals inside
-  validate (currently validate is a pure corrections-count check).
+The pipeline is end-to-end now; rough edges are about tuning
+rather than missing stages:
+
+- **Round 2+ active-roles narrowing** can cause re-introductions:
+  if a corrected role's patch revives a cross-role concern that
+  no longer reaches the architect (because the other role is
+  skipped), the catch lands in a future round. Cheap, but
+  mentioned for honesty.
+- **Classifier defaults** for `user_review` are conservative
+  (everything → promote on classifier failure). Worth tuning
+  per-project once we've seen more rule-promotion churn.
+- **fix.md re-runs** rely on the user manually invoking the
+  external implementer; no auto-loop.

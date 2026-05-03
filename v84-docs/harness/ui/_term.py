@@ -69,6 +69,10 @@ def read_key(fd: int) -> str:
         return "enter"
     if ch == " ":
         return "space"
+    if ch == "\t":
+        return "tab"
+    if ch == "\x7f":
+        return "backspace"
     if ch == "\x03":
         return "ctrl_c"
     if ch == "\x04":

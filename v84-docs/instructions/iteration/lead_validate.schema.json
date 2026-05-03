@@ -1,0 +1,82 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["corrections", "rules"],
+  "description": "Architect's verdict-half output. Two ballots — vote accept or reject on every lead correction in scope and on every role-scoped rule the leads have accepted (this iteration's freshly raised + still-accepted from earlier rounds). Silence is not a vote; voting per item is what surfaces silent drift on rules previously accepted.",
+  "properties": {
+    "corrections": {
+      "type": "array",
+      "description": "One vote per lead correction in scope (corrections sitting in <role>.corrections.yaml after lead_round). Vote on every entry; skipping is not a vote.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "verdict"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The correction's id, copied verbatim (e.g. v84-1.frontend.pages.c.3 or v84-1.backend.lead.c.1)."
+          },
+          "verdict": {
+            "enum": ["accept", "reject"]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required when verdict=reject. One short prose line naming the cross-role conflict — cite the conflicting role / action_id, or the responsibility encroached."
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "description": "One vote per role-scoped rule the leads have accepted in this iteration (freshly raised + still-accepted from earlier rounds). Vote on every entry; skipping is not a vote.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "verdict"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The rule's id, copied verbatim (e.g. v84-1.frontend.lead.rule.3 or v84-1.frontend.pages.rule.2)."
+          },
+          "verdict": {
+            "enum": ["accept", "reject"]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required when verdict=reject. One short prose line naming the cross-role conflict — cite the conflicting global / role rule id, the role that cannot honor the contract, or the responsibility encroached."
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Mixed verdicts — most accept, a few reject for distinct cross-role breaks",
+      "example": {
+        "corrections": [
+          {"id": "v84-1.frontend.pages.c.1", "verdict": "accept"},
+          {"id": "v84-1.frontend.pages.c.2", "verdict": "accept"},
+          {"id": "v84-1.backend.lead.c.1", "verdict": "reject", "reason": "Tells backend to expose internal job ids on the wire, but frontend draft v84-1.3.frontend.4 expects opaque slugs per global v84-0.global.rule.5."}
+        ],
+        "rules": [
+          {"id": "v84-1.frontend.lead.rule.1", "verdict": "accept"},
+          {"id": "v84-1.frontend.lead.rule.2", "verdict": "reject", "reason": "Mandates client-side caching of API responses; conflicts with global v84-0.global.rule.4 which requires every API read to hit the server for freshness."},
+          {"id": "v84-1.backend.lead.rule.3", "verdict": "reject", "reason": "Requires synchronous job dispatch on every write, but devops layout pins the job runner to an async queue per v84-0.devops.rule.1."},
+          {"id": "v84-1.testing.lead.rule.1", "verdict": "accept"}
+        ]
+      }
+    },
+    {
+      "title": "All accepts — leads' work stands cross-role",
+      "example": {
+        "corrections": [
+          {"id": "v84-1.frontend.pages.c.1", "verdict": "accept"}
+        ],
+        "rules": [
+          {"id": "v84-1.frontend.lead.rule.1", "verdict": "accept"},
+          {"id": "v84-1.backend.lead.rule.1", "verdict": "accept"}
+        ]
+      }
+    }
+  ]
+}

@@ -71,7 +71,7 @@ primary artefacts, code expresses them. They diverge on:
 ### From spec-kit
 
 - The notion of project-wide engineering rules (our promoted
-  conventions in `<project>/v84/{role,global}.conventions.yaml`).
+  rules in `<project>/v84/{role,global}.rules.yaml`).
 - Authority concentration in a synthesising agent (our architect).
 
 ### New in v84
@@ -95,7 +95,7 @@ primary artefacts, code expresses them. They diverge on:
 
 ### From spec-kit
 
-- **Immutable constitution.** v84's conventions are living — they
+- **Immutable constitution.** v84's rules are living — they
   emerge from iteration evidence, can be edited at user_review,
   can be superseded.
 - **Phase-gate checklists.** v84 stops on "no corrections left,"

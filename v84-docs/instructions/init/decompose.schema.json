@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["tasks"],
+  "description": "Settled top-level task list for the project. Number of tasks calibrated by project tier (Trivial 1–3, Simpler 3–8, Serious 8–20, Complex 20–30).",
+  "properties": {
+    "tasks": {
+      "type": "array",
+      "description": "Ordered list of task entries. Each task is a vertical slice that calls out what the relevant roles each deliver — not a separate task per role.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["task"],
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "Plain prose describing the task. Lead with the user-facing outcome, then the key deliverables or acceptance criteria. No code, no framework names, no headings."
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Top-level task list for the project",
+      "example": {
+        "tasks": [
+          {
+            "task": "Scaffold the monorepo shell so every later feature has somewhere to land. Devops: workspace layout, containerised dev environment, CI workflow that runs lint and a placeholder test suite, /health endpoint. Backend: app skeleton with health route, config loading, DB connection bootstrap. Frontend: app shell with empty landing route, build pipeline producing a static bundle the dev container serves."
+          },
+          {
+            "task": "Add user registration and authentication end-to-end. Backend: register / login / logout / refresh API endpoints, password hashing, session storage. Frontend: signup form, login form, post-signup landing, session-aware nav, error states. Devops: session-store container if separate from the main DB."
+          },
+          {
+            "task": "Build the raffle cycle and dashboard. Backend: cycle management API, winner selection, automatic rollover. Frontend: dashboard with countdown, ticket history. Devops: scheduling infra for cycle rollover."
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -128,65 +128,25 @@ a canvas animation is one task, not five.
 - Polish items (empty states, error flows, onboarding) bundled as
   one or two trailing tasks — not twenty separate ones.
 
-## Output Format
+## What to emit
 
-**Think as long as you need before submitting.** Use the thinking
-phase to scope, sequence, and check tier-calibration. Longer thinking
-is fine — longer *response* is not.
+Think as long as you need. Keep the response short.
 
-When finished, the **first non-thinking line** must be exactly:
+Respond with a single JSON object with one key: `tasks`, an
+ordered list. Each task has one field, `task`. The field is plain
+prose. Lead with the user-facing outcome. Add the key deliverables
+or acceptance criteria. No code. No framework names. No headings
+inside the task.
 
-====== MY RESPONSE ======
+Each task is a vertical slice. The slice names what each relevant
+role delivers. Do not split into a separate task per role. Example
+task prose:
 
-After the marker emit **valid YAML** with one field:
-
-- `tasks`: an ordered list of task entries. Each entry has one field:
-  - `task`: block scalar (`|` style) prose describing the task.
-    Lead with the user-facing outcome, then the key deliverables or
-    acceptance criteria. Plain prose — no code, no framework names,
-    no headings inside the task.
-
-Number of tasks is calibrated by project tier (Trivial 1–3, Simpler
-3–8, Serious 8–20, Complex 20–30). Include a scaffold task only when
-there's real scaffold work — skip or fold it in for trivial projects.
-
-**Every prose field uses `|` block scalar.** That covers every
-`task` entry. Plain scalars break when prose contains colons
-followed by a space (`(foo: bar)`), quotes, or other YAML-special
-chars. Block scalars never do.
-
-### Output Example
-
-Note how each task is a **vertical slice** that calls out what
-the relevant roles each deliver — not a separate task per role.
-
-```
-====== MY RESPONSE ======
-
-tasks:
-  - task: |
-      Scaffold the monorepo shell so every later feature has
-      somewhere to land. Devops: workspace layout, containerised
-      dev environment, CI workflow that runs lint + placeholder
-      test suite, /health endpoint for deployment smoke checks.
-      Backend: app skeleton with health route, config loading,
-      DB connection bootstrap (no entities yet). Frontend: app
-      shell with empty landing route, build pipeline producing a
-      static bundle the dev container serves.
-  - task: |
-      Add user registration + authentication end-to-end. Backend:
-      register / login / logout / refresh API endpoints, password
-      hashing, JWT issuing, session storage. Frontend: signup form,
-      login form, post-signup landing, session-aware nav, error
-      states. Devops: session-store container if separate from the
-      main DB. Sequenced ahead of marketplace work because
-      subsequent tasks assume an authenticated user context.
-  - task: |
-      Build the raffle cycle + dashboard. Backend: cycle
-      management API (create / list / close cycles), winner
-      selection, automatic rollover. Frontend: raffle dashboard
-      with magic-box interaction, countdown timer, ticket history.
-      Devops: any scheduling infra needed for cycle rollover (cron
-      or scheduled job). One iteration — back, front, and infra
-      ship in parallel.
-```
+> Scaffold the monorepo shell so every later feature has somewhere
+> to land. Devops: workspace layout, containerised dev environment,
+> CI workflow that runs lint and a placeholder test suite, /health
+> endpoint for deployment smoke checks. Backend: app skeleton with
+> health route, config loading, DB connection bootstrap (no
+> entities yet). Frontend: app shell with empty landing route,
+> build pipeline producing a static bundle the dev container
+> serves.

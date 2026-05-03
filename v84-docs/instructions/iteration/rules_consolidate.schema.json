@@ -1,0 +1,56 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rules"],
+  "description": "Architect's consolidation pass over pending role-internal lead rules after cross-lead voting has settled the iteration's globals. Each lead rule is voted accept or reject based on conflict with settled globals, drift against root-promoted rules, subsumption by a settled global, or same-scope duplication across roles. Architect does not propose new rules or reword existing ones at this stage.",
+  "properties": {
+    "rules": {
+      "type": "array",
+      "description": "One vote per pending role-internal rule across every active role. Vote on every entry; skipping is not a vote.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "verdict"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The lead rule's id, copied verbatim (e.g. v84-1.backend.lead.rule.3)."
+          },
+          "verdict": {
+            "enum": ["accept", "reject"]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required when verdict=reject. One short line citing the concrete cause — the conflicting settled global id, the conflicting root rule id, the subsuming global id, or the duplicate lead rule id from another role."
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Mixed verdicts — most accepts, several rejects for distinct reasons",
+      "example": {
+        "rules": [
+          {"id": "v84-1.backend.lead.rule.1", "verdict": "accept"},
+          {"id": "v84-1.backend.lead.rule.2", "verdict": "accept"},
+          {"id": "v84-1.backend.lead.rule.4", "verdict": "reject", "reason": "Subsumed by settled global v84-1.architect.rule.7 (error response shape covers the same wire contract this lead rule mandates)."},
+          {"id": "v84-1.frontend.lead.rule.1", "verdict": "accept"},
+          {"id": "v84-1.frontend.lead.rule.5", "verdict": "reject", "reason": "Same-scope duplicate of v84-1.backend.lead.rule.6 — both define ISO 8601 timestamp formatting; architect did not promote, so rejecting frontend's copy and leaving backend's as the authoritative source for now."},
+          {"id": "v84-1.testing.lead.rule.2", "verdict": "reject", "reason": "Conflicts with root rule v84-0.testing.rule.1 — root requires per-worker schema isolation, this lead rule mandates a single shared schema."},
+          {"id": "v84-1.devops.lead.rule.3", "verdict": "accept"}
+        ]
+      }
+    },
+    {
+      "title": "All accepts — no conflicts after globals settled",
+      "example": {
+        "rules": [
+          {"id": "v84-1.backend.lead.rule.1", "verdict": "accept"},
+          {"id": "v84-1.frontend.lead.rule.1", "verdict": "accept"},
+          {"id": "v84-1.testing.lead.rule.1", "verdict": "accept"}
+        ]
+      }
+    }
+  ]
+}

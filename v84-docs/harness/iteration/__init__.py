@@ -1,43 +1,53 @@
 """
-iteration — per-iteration stages (plan, cycle, close) and registry.
+iteration — per-iteration stages (plan, pre-pass, cycle, architect,
+            validate, user_review, finish) and registry.
 
-Mirrors `init/__init__.py` shape: each stage module exports STAGE +
-its public function; this file collects them in priority order.
+Stage flow:
+    plan               → decompose iteration into sub-tasks
+    rules_lead         → per-role lead proposes role-internal rules
+    rules_architect    → architect proposes cross-role globals
+    rules_validate     → per-lead vote on architect's pending globals
+    rules_consolidate  → architect dedup pass over surviving lead rules
+    user_rules_review  → user gate: promote → cycle, or regenerate pre-pass
+    cycle              → per-role pipeline (draft|patch → review → lead),
+                         parallel across roles, sequential within
+    architect          → cross-role synthesis (blocks until cycle's join)
+    architect_validate → either bumps round → cycle, or → user_review
+    user_review        → user accepts / rejects rules raised mid-cycle
+    finish             → close iteration
 
-Currently shipping:
-    plan        decompose a top-level task into sub-tasks for the
-                cycle. Two-shape agent (TASKS / QUESTIONS), Q&A
-                round via field_editor.
-
-Future (DEFERRED.md):
-    cycle       writers → reviewers → architect rounds
-    close       merge delta into documentation/, advance core.yaml
+The per-role workers (draft_role, patch_role, review_role, lead_role)
+are no longer Stage objects; cycle.py orchestrates them.
 """
 
 from __future__ import annotations
 
 from core.stage import Stage
 
-from .architect    import STAGE as _architect_stage,    architect
-from .draft        import STAGE as _draft_stage,        draft
-from .finish       import STAGE as _finish_stage,       finish
-from .lead         import STAGE as _lead_stage,         lead
-from .patch        import STAGE as _patch_stage,        patch
-from .plan         import STAGE as _plan_stage,         plan
-from .review       import STAGE as _review_stage,       review
-from .user_review  import STAGE as _user_review_stage,  user_review
-from .validate     import STAGE as _validate_stage,     validate
+from .architect          import STAGE as _architect_stage,          architect
+from .architect_validate import STAGE as _architect_validate_stage, architect_validate
+from .cycle              import STAGE as _cycle_stage,              cycle
+from .finish             import STAGE as _finish_stage,             finish
+from .plan               import STAGE as _plan_stage,               plan
+from .rules_architect    import STAGE as _rules_architect_stage,    rules_architect
+from .rules_consolidate  import STAGE as _rules_consolidate_stage,  rules_consolidate
+from .rules_lead         import STAGE as _rules_lead_stage,         rules_lead
+from .rules_validate     import STAGE as _rules_validate_stage,     rules_validate
+from .user_review        import STAGE as _user_review_stage,        user_review
+from .user_rules_review  import STAGE as _user_rules_review_stage,  user_rules_review
 
 
 STAGES: tuple[Stage, ...] = tuple(sorted(
     (
         _plan_stage,
-        _draft_stage,
-        _review_stage,
-        _lead_stage,
+        _rules_lead_stage,
+        _rules_architect_stage,
+        _rules_validate_stage,
+        _rules_consolidate_stage,
+        _user_rules_review_stage,
+        _cycle_stage,
         _architect_stage,
-        _validate_stage,
-        _patch_stage,
+        _architect_validate_stage,
         _user_review_stage,
         _finish_stage,
     ),
@@ -52,12 +62,14 @@ __all__ = [
     "STAGES",
     "STAGES_BY_NAME",
     "architect",
-    "draft",
+    "architect_validate",
+    "cycle",
     "finish",
-    "lead",
-    "patch",
     "plan",
-    "review",
+    "rules_architect",
+    "rules_consolidate",
+    "rules_lead",
+    "rules_validate",
     "user_review",
-    "validate",
+    "user_rules_review",
 ]

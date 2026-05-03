@@ -1,0 +1,76 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["corrections", "rules"],
+  "description": "Two separate vote lists. `corrections` covers pending architect corrections targeting your role; `rules` covers pending global rule proposals. Both arrays are required. Use empty array when nothing to vote on in that category.",
+  "properties": {
+    "corrections": {
+      "type": "array",
+      "description": "One vote per pending architect correction targeting your role.",
+      "items": {
+        "type": "object",
+        "required": ["id", "verdict"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The pending correction's id, copied verbatim."
+          },
+          "verdict": {
+            "enum": ["accept", "reject"]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required when verdict=reject. One short prose line naming the conflict."
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "description": "One vote per pending global rule proposal.",
+      "items": {
+        "type": "object",
+        "required": ["id", "verdict"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The pending rule proposal's id, copied verbatim."
+          },
+          "verdict": {
+            "enum": ["accept", "reject"]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Required when verdict=reject. One short prose line naming the conflict."
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Both pending architect corrections and pending global rules exist for your role",
+      "example": {
+        "corrections": [
+          {"id": "v84-1.architect.c.1", "verdict": "accept"},
+          {"id": "v84-1.architect.c.2", "verdict": "reject", "reason": "Conflicts with v84-1.frontend.rule.3 — local data flow is async by design."}
+        ],
+        "rules": [
+          {"id": "v84-1.architect.rule.1", "verdict": "accept"},
+          {"id": "v84-1.architect.rule.2", "verdict": "reject", "reason": "Cannot honor a synchronous-write requirement on this role's queue-backed pipeline."}
+        ]
+      }
+    },
+    {
+      "title": "Only pending global rules, no pending architect corrections for your role",
+      "example": {
+        "corrections": [],
+        "rules": [
+          {"id": "v84-1.architect.rule.1", "verdict": "accept"}
+        ]
+      }
+    }
+  ]
+}

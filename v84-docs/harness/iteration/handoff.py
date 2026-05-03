@@ -8,8 +8,7 @@ that external implementer needs into one self-contained markdown
 file at iterations/<n>/tasks.md:
 
     - The iteration's plan (what's being built and why)
-    - Active conventions in scope (project root globals + per-role)
-    - Active decisions in scope (same)
+    - Active rules in scope (project root globals + per-role)
     - Role definitions (what each role owns + boundaries)
     - The tagging convention (so produced code can be traced back
       to the action that requested it)
@@ -31,11 +30,10 @@ import yaml
 from core import coreyaml
 from core.context import (
     active_roles,
-    conventions_block,
-    decisions_block,
     plan_block,
     project_layout_block,
     roles_block,
+    rules_block,
 )
 
 
@@ -73,13 +71,9 @@ def write_handoff(project_dir: Path, iteration_n: int) -> Path:
         "",
         project_layout_block(project_dir).strip() or "(no layout set)",
         "",
-        "## Active conventions",
+        "## Active rules",
         "",
-        _rules_section(project_dir, roles, kind="conventions"),
-        "",
-        "## Active decisions",
-        "",
-        _rules_section(project_dir, roles, kind="decisions"),
+        _rules_section(project_dir, roles),
         "",
         "## Tagging convention",
         "",
@@ -112,8 +106,8 @@ def write_handoff(project_dir: Path, iteration_n: int) -> Path:
 def _intro_blurb() -> str:
     return (
         "> This file is the complete handoff for iteration "
-        "implementation. v84 produced the conventions, decisions, "
-        "role split, and per-action plan; your job is to translate "
+        "implementation. v84 produced the rules, role split, and "
+        "per-action plan; your job is to translate "
         "the actions below into actual code. Tag what you write so "
         "the produced source is traceable back to the action that "
         "requested it (see the tagging convention)."
@@ -146,14 +140,12 @@ def _project_root_section(project_dir: Path) -> str:
 
 
 def _rules_section(
-    project_dir: Path, roles: list[str], *, kind: str,
+    project_dir: Path, roles: list[str],
 ) -> str:
-    """Globals first, then each role's section. Each entry: id + rule."""
+    """Globals first, then each role's section. Each entry: id + text."""
     parts: list[str] = []
 
-    block_fn = conventions_block if kind == "conventions" else decisions_block
-
-    globals_text = block_fn(project_dir, role=None).strip()
+    globals_text = rules_block(project_dir, role=None).strip()
     if globals_text:
         parts.append("### Global")
         parts.append("")
@@ -161,10 +153,10 @@ def _rules_section(
         parts.append("")
 
     for role in roles:
-        # `block_fn(role=...)` returns globals + role-scoped merged.
-        # We want the role-scoped slice only here. Easiest: read the
-        # role file directly and render the same way.
-        role_text = _render_role_rules(project_dir, role, kind)
+        # `rules_block(role=...)` would return globals + role merged.
+        # We want only the role-scoped slice here, so read the root
+        # role file directly.
+        role_text = _render_role_rules(project_dir, role)
         if role_text:
             parts.append(f"### {role.capitalize()}")
             parts.append("")
@@ -176,9 +168,9 @@ def _rules_section(
     return "\n".join(parts).rstrip()
 
 
-def _render_role_rules(project_dir: Path, role: str, kind: str) -> str:
+def _render_role_rules(project_dir: Path, role: str) -> str:
     """Render only the role-scoped rules from the project root file."""
-    p = project_dir / "v84" / f"{role}.{kind}.yaml"
+    p = project_dir / "v84" / f"{role}.rules.yaml"
     if not p.exists():
         return ""
     data = yaml.safe_load(p.read_text(encoding="utf-8")) or []
@@ -189,9 +181,9 @@ def _render_role_rules(project_dir: Path, role: str, kind: str) -> str:
         if not isinstance(r, dict):
             continue
         rid = r.get("id", "?")
-        rule = (r.get("rule") or "").strip()
-        if rule:
-            blocks.append(f"### {rid}\n\n{rule}")
+        text = (r.get("text") or "").strip()
+        if text:
+            blocks.append(f"### {rid}\n\n{text}")
     return "\n\n".join(blocks)
 
 
@@ -264,6 +256,7 @@ def _render_action(a: dict) -> str:
     files = a.get("files") or []
     depends = a.get("depends") or []
     action = (a.get("action") or "").strip()
+    verify_lines = _verify_lines(a.get("verify"))
 
     lines = [f"- **{aid}**"]
     if files:
@@ -274,7 +267,63 @@ def _render_action(a: dict) -> str:
     # Indent the prose so it nests under the bullet visually.
     for prose_line in action.splitlines():
         lines.append(f"  {prose_line}")
+    # Inline verify rows directly under the action so the implementer
+    # reads observable assertions in the same context as the action's
+    # prose. Separating them into a back-of-doc section drops the
+    # context that ties each assertion to the change that produces it.
+    if verify_lines:
+        lines.append("")
+        lines.append("  Verify:")
+        for ln in verify_lines:
+            lines.append(f"    - {ln}")
     return "\n".join(lines)
+
+
+_SENTENCE_TERMINATORS = (".", "!", "?")
+
+
+def _verify_lines(raw: Any) -> list[str]:
+    """Normalise an action's `verify:` field to a list of assertions.
+
+    Tolerant of YAML list shape (each item is one assertion) and
+    block-scalar string shape. For strings: an assertion ends at a
+    sentence terminator (`.`, `!`, `?`) or a blank line. Lines that
+    don't end with a terminator are joined to the next line — writers
+    line-wrap long assertions and we shouldn't bullet each wrap as
+    its own row.
+
+    Falls back to per-line splitting when no terminator is found
+    anywhere (the writer is using bullet-style fragments without
+    periods)."""
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [s for s in (str(item).strip() for item in raw) if s]
+    if not isinstance(raw, str):
+        return []
+
+    text = raw.replace("\r\n", "\n")
+    # If no terminator anywhere, treat each non-empty line as its own
+    # assertion (writer is using fragment-style listing).
+    if not any(ch in text for ch in _SENTENCE_TERMINATORS):
+        return [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+    out: list[str] = []
+    current: list[str] = []
+    for line in text.splitlines():
+        ln = line.strip()
+        if not ln:
+            if current:
+                out.append(" ".join(current))
+                current = []
+            continue
+        current.append(ln)
+        if ln.endswith(_SENTENCE_TERMINATORS):
+            out.append(" ".join(current))
+            current = []
+    if current:
+        out.append(" ".join(current))
+    return out
 
 
 def _implementer_rules() -> str:
@@ -284,7 +333,7 @@ def _implementer_rules() -> str:
         "- Do not modify files outside each action's `files:` list. "
         "Cross-file effects are the writer's responsibility — they "
         "decompose into multiple actions.\n"
-        "- Honour every active convention and decision. They are "
+        "- Honour every active rule. They are "
         "binding: if your implementation would violate one, surface "
         "the conflict back to v84 (next iteration can refine the "
         "rule) rather than silently breaking the rule.\n"

@@ -71,88 +71,110 @@ narrow job:
 |-------------|----------------------------------|-------------------------------------------|
 | **Writer**  | one role's full surface          | drafting / patching the role's actions    |
 | **Reviewer**| one lens within one role         | suggestions from a single angle of attack |
-| **Lead**    | one role, role-internal only     | accepting / rejecting suggestions; setting role-scoped conv/dec |
-| **Architect**| cross-role                      | catching what no single lead could see; proposing global conv/dec |
+| **Lead**    | one role, role-internal only     | accepting / rejecting suggestions; setting role-scoped rules |
+| **Architect**| cross-role                      | catching what no single lead could see; proposing global rules |
 
 A role has one writer and (by default) four reviewers. There is
 one lead per active role and exactly one architect across the
-project. See [four-layer-split.md](four-layer-split.md) for the
-responsibility detail and what each layer never does.
+project. The lead's work is split across two LLM calls (a verdict
+call and a raise call) that fire in parallel under the
+`lead_round` stage. See [four-layer-split.md](four-layer-split.md)
+for the responsibility detail and what each layer never does.
 
-## The cycle loops until validate finds nothing left
+## The cycle loops until architect_validate finds nothing left
 
 Each iteration runs a cycle:
 
 ```
-plan → draft → review → lead → architect → validate
-                                              │
+plan → draft → review → lead_round → architect → architect_validate
+                                                       │
                               corrections still pending? ──┐
-                                              │            │
-                                  YES → round++, patch    │
-                                              │            │
-                                          patch → review → lead → architect → validate
-                                              │                                    ↓
-                                  NO  → user_review → done                  (loop back)
+                                                       │   │
+                                   YES → round++, patch    │
+                                                       │   │
+                                          patch → review → lead_round → architect → architect_validate
+                                                       │                                          ↓
+                                   NO  → user_review → finish                              (loop back)
 ```
 
 Round 1 starts with `draft` (writer drafts from scratch). Round 2
 and beyond start with `patch` (writer applies the corrections that
-landed). **validate** is the cycle-end gate — it counts pending
-corrections across roles and either triggers a new cycle (with
-patch) or hands off to user_review. See
-[iteration-loop.md](iteration-loop.md) for the round mechanics
-and the `status.yaml` state machine.
+landed). **architect_validate** is the cycle-end gate — it fans
+out one call per active lead to vote on architect-proposed
+globals (single-veto) and on architect's cross-role corrections
+targeting that role, then counts pending corrections across roles
+and either triggers a new cycle (with patch) or hands off to
+user_review. See [iteration-loop.md](iteration-loop.md) for the
+round mechanics and the `status.yaml` state machine.
 
-## Conventions vs decisions
+## Rules
 
-Two stores for two kinds of rule:
+One store for the durable rulings the project lives by. Rules are
+durable rulings — pattern-rules ("all DB columns use snake_case
+mapping") and factual choices ("session timeout = 30 min") alike —
+settled via the verdict/raise lifecycle. No prior split between
+"conventions" and "decisions"; both shapes flow through the same
+stream.
 
-- **Conventions** are durable rules that should apply across this
-  and future iterations ("all DB columns use snake_case mapping").
-- **Decisions** are one-shot rulings for this iteration only
-  ("session timeout stays at 30 min in this scope").
+The lifecycle:
 
-Both flow through the same lifecycle:
-
-1. Writer or reviewer raises a proposal in `needs_convention` /
-   `needs_decision`.
+1. Writer or reviewer raises a proposal in their `rules` array.
 2. Harness records it in the iteration's role-scoped store with
    `status: pending`.
-3. Lead verdicts each pending entry: accept (with a final `rule`
-   text) or reject. Rejected stays in the store for audit.
-4. Architect emits its own globals into `iterations/<n>/global.*`,
-   pending until cross-lead validation (Phase B).
-5. user_review (Phase B) prompts the user to confirm everything
-   accepted, then promotes to `<project>/v84/{role,global}.*`.
+3. The `review_validate` half of `lead_round` verdicts each
+   pending entry: accept (with a final `text` wording) or reject.
+   The lead's own `lead.md` raises auto-accept (no further
+   verdicting — lead is the role's authority). Rejected entries
+   stay in the store for audit.
+4. Architect emits its own globals into
+   `iterations/<n>/global.rules.yaml`, pending until
+   `architect_validate` runs cross-lead voting (single-veto).
+5. user_review classifies every accepted rule (promote vs
+   iteration-only) via the `classify-rules` LLM call, lets the
+   user tick / pick alternatives / inline-edit, then promotes
+   ticked entries to `<project>/v84/{<role>,global}.rules.yaml`.
 
-See [conventions-and-decisions.md](conventions-and-decisions.md)
-for the full lifecycle and the `_load_rules` helper that reads
-"in scope" rules from the right combination of root + iteration
-files.
+See [rules.md](rules.md) for the full lifecycle and the
+`_load_rules` helper that reads "in scope" rules from the right
+combination of root + iteration files.
 
 ## Living documentation
 
 `<project>/v84/` is the project's authoritative state — what's
 been agreed, what's pending, what was rejected. Code references
 back via `[v84-N.M.role.K]` tags. Iterations leave their full
-working state under `iterations/<n>/`; the root-level `<role>.*`
-and `global.*` files only fill in once the user_review gate
-promotes accepted rules.
+working state under `iterations/<n>/`; the root-level
+`<role>.rules.yaml` and `global.rules.yaml` files only fill in
+once the user_review gate promotes accepted rules.
 
 The on-disk shape is the source of truth. No state lives only in
 agent context windows or LLM logs (those are audit, not state).
 
 ## Format discipline
 
-YAML for everything structured. Markdown only for free-form
-agent-instruction prose under `instructions/`. Per-field naming
-follows two rules:
+Two boundaries — on disk and on the wire — and they use different
+formats.
+
+**On disk: YAML.** Every file under `<project>/v84/` is YAML.
+Markdown only for free-form agent prose under `instructions/`
+and for the `tasks.md` / `fix.md` implementer hand-offs.
+
+**On the wire: JSON Schema.** Every agent stage owns an
+`<stage>.md` + `<stage>.schema.json` pair under
+`v84-docs/instructions/`. The harness sends
+`response_format: json_object` plus the schema as guidance, parses
+with `json.loads`, validates against the schema, retries on
+failure. No marker, no YAML extraction, no fallback parser. JSON
+output gets converted to YAML at persist time. Details in
+[llm-format.md](llm-format.md).
+
+Per-field naming follows two rules:
 
 - `_id` for unique instance handles (`task_id`, `action_id`,
   `iteration_id`).
 - `_tag` for category slugs from a known enum (`role_tag`,
   `reviewer_tag`).
 
-Every prose field uses `|` block scalar to avoid YAML's plain-
-scalar pitfalls (colon-followed-by-space, embedded quotes).
+Every prose field on disk uses `|` block scalar to avoid YAML's
+plain-scalar pitfalls (colon-followed-by-space, embedded quotes).
 Details in [format.md](format.md).

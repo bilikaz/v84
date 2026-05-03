@@ -1,0 +1,92 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rules"],
+  "description": "Role-scoped rule proposals raised at the start of the iteration, before any actions are drafted. Lead is the role's authority — each proposal is accepted on the spot for this role.",
+  "properties": {
+    "rules": {
+      "type": "array",
+      "description": "Role-scoped rule proposals. On a fresh iteration with no inherited root rules, propose 5–7 starting rules. When prior iterations have already promoted root rules for this role, propose only what is genuinely additive — smaller sets are normal.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["proposal"],
+        "properties": {
+          "proposal": {
+            "type": "string",
+            "description": "The rule wording — the final form you'd enact."
+          },
+          "alternatives": {
+            "type": "array",
+            "description": "1–3 other viable approaches you considered — genuinely different choices the user could pick instead, not rephrasings of the same proposal.",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Frontend lead, fresh iteration with no inherited root rules",
+      "example": {
+        "rules": [
+          {
+            "proposal": "All UI primitives live in apps/web/src/components/ui/ as one .tsx file per component, lowercase-hyphenated (e.g. button.tsx, dialog.tsx).",
+            "alternatives": [
+              "Primitives grouped by category folder (forms/, layout/, feedback/) under apps/web/src/components/ui/.",
+              "Primitives co-located with their first consumer page until reused twice."
+            ]
+          },
+          {
+            "proposal": "React components are named in PascalCase and exported as default; one component per file.",
+            "alternatives": [
+              "Components named PascalCase, exported as named exports only (no default).",
+              "Multiple related components per file when they share private state; default-export the entry component."
+            ]
+          },
+          {
+            "proposal": "Page-level data fetching uses React Query hooks defined in apps/web/src/lib/queries/<feature>.ts and consumed by pages via useQuery.",
+            "alternatives": [
+              "Data fetching co-located with the page component file.",
+              "All queries centralised in apps/web/src/lib/api.ts as a single namespace."
+            ]
+          },
+          {
+            "proposal": "Tailwind utility classes are written directly in JSX; class-variance-authority is used only when a primitive carries 3+ visual variants.",
+            "alternatives": [
+              "All variants expressed via cva from the start, even for two-state primitives.",
+              "Inline utility strings only; no cva, variant logic via conditional class-name strings."
+            ]
+          },
+          {
+            "proposal": "Routes are declared in apps/web/src/App.tsx; nested layouts use the React Router <Outlet /> pattern.",
+            "alternatives": [
+              "Routes split into apps/web/src/routes/index.tsx as a flat declaration list.",
+              "File-based routing via a convention scanner under apps/web/src/pages/."
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Backend lead, later iteration where root rules already cover most areas",
+      "example": {
+        "rules": [
+          {
+            "proposal": "All Fastify route plugins are registered with a versioned prefix /v1 to support future API versioning without breaking existing clients.",
+            "alternatives": [
+              "Versioning via Accept header rather than URL prefix.",
+              "Single unversioned namespace; defer versioning until the first breaking change."
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Lead with nothing additive to propose (rare)",
+      "example": {
+        "rules": []
+      }
+    }
+  ]
+}

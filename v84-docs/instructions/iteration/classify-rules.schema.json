@@ -1,0 +1,54 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["classifications"],
+  "description": "One bucket assignment per accepted rule from this iteration. Every rule you were given appears exactly once.",
+  "properties": {
+    "classifications": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "bucket", "reason"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The rule id, copied verbatim from the input."
+          },
+          "bucket": {
+            "enum": ["promote", "iteration_only"],
+            "description": "promote = lands in project root and binds future iterations; iteration_only = stays in the iteration file."
+          },
+          "reason": {
+            "type": "string",
+            "description": "One short sentence explaining the bucket choice."
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Mixed promote and iteration-only classifications",
+      "example": {
+        "classifications": [
+          {
+            "id": "v84-1.architect.rule.1",
+            "bucket": "promote",
+            "reason": "Cross-role error response shape — applies to every future API endpoint."
+          },
+          {
+            "id": "v84-1.frontend.rule.2",
+            "bucket": "promote",
+            "reason": "Class-merging via cn() helper is a durable styling pattern across all future frontend work."
+          },
+          {
+            "id": "v84-1.backend.lead.rule.1",
+            "bucket": "iteration_only",
+            "reason": "Refresh-token rotation strategy specific to this iteration's auth scaffold; future iterations may revisit."
+          }
+        ]
+      }
+    }
+  ]
+}

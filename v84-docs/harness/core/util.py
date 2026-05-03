@@ -7,6 +7,7 @@ Intentionally tiny. Path resolution + nothing else.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -50,6 +51,22 @@ def instruction_path(*parts: str) -> Path:
             → v84-docs/instructions/executor/agent.md
     """
     return v84_docs_root() / "instructions" / Path(*parts)
+
+
+def load_instruction(group: str, stem: str) -> tuple[str, dict]:
+    """Load an instruction's prose and its JSON Schema as a pair.
+
+    Reads `instructions/<group>/<stem>.md` for prose and
+    `instructions/<group>/<stem>.schema.json` for the response shape.
+    Both files must exist — schema-constrained stages own both halves.
+
+    Returns (system_prompt_text, json_schema_dict).
+    """
+    md_path = instruction_path(group, f"{stem}.md")
+    schema_path = instruction_path(group, f"{stem}.schema.json")
+    prose = md_path.read_text(encoding="utf-8")
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    return prose, schema
 
 
 def project_v84_dir(project_dir: Path) -> Path:

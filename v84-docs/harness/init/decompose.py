@@ -25,14 +25,14 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-import yaml
+import json
 
 from core import coreyaml
 from core.context import active_roles, project_layout_block, roles_block, stack_block
 from core.stage import Stage
-from ui import Spinner, detail_list, text_input
-from core.util import default_log_dir, instruction_path
-from llm import LLMConfig, call
+from ui import detail_list, text_input
+from core.util import default_log_dir, load_instruction
+from llm import LLMConfig, call_json
 
 
 # No tools exposed — when the user wants changes they revise via a
@@ -62,10 +62,7 @@ def decompose(
     if not brief:
         raise ValueError("brief is empty")
 
-    skill_file = instruction_path("init", "decompose.md")
-    if not skill_file.exists():
-        raise FileNotFoundError(f"Instruction not found: {skill_file}")
-    system = skill_file.read_text(encoding="utf-8")
+    system, schema = load_instruction("init", "decompose")
 
     # Compact context — only what the model needs to decompose. Full
     # profile.yaml carries llm/loop/execution config that's irrelevant
@@ -87,15 +84,14 @@ def decompose(
         "the tasks (e.g. an active mobile role means mobile-specific\n"
         "tasks; a chosen framework shapes what the scaffold task covers;\n"
         "a monorepo layout means tasks reference apps/<name>/ paths,\n"
-        "single-app means src/). Follow your instruction's output format\n"
-        "exactly."
+        "single-app means src/)."
     )
 
     if cfg is None:
         raise ValueError("LLMConfig required — call via v84.py or pass cfg=")
 
     # Initial proposal.
-    response = _call_llm(cfg, system, user_msgs, attempt=1)
+    response = _call_llm(cfg, system, schema, user_msgs, attempt=1)
 
     # Revision loop: user accepts, or feeds a comment back and the LLM
     # produces a new plan. The user never edits the YAML by hand —
@@ -136,13 +132,13 @@ def decompose(
 
         attempt += 1
         revision_msgs = list(user_msgs) + [
-            f"## Previous proposal\n\n```yaml\n{response}\n```",
+            f"## Previous proposal\n\n```json\n{json.dumps(response, indent=2)}\n```",
             f"## User feedback\n\n{comment}",
-            "Revise the task list based on the user's feedback. Keep the "
-            "same output format. Adjust whatever the comment requests; "
-            "leave the rest of the plan intact.",
+            "Revise the task list based on the user's feedback. Adjust "
+            "whatever the comment requests; leave the rest of the plan "
+            "intact.",
         ]
-        response = _call_llm(cfg, system, revision_msgs, attempt=attempt)
+        response = _call_llm(cfg, system, schema, revision_msgs, attempt=attempt)
 
     final_tasks = _parse_tasks(response)
     if not final_tasks:
@@ -171,33 +167,28 @@ def decompose(
     return out_file
 
 
-def _call_llm(cfg: LLMConfig, system: str, user_msgs: list[str],
-              *, attempt: int) -> str:
+def _call_llm(cfg: LLMConfig, system: str, schema: dict,
+              user_msgs: list[str], *, attempt: int) -> dict:
     """One round of decompose. Logged with attempt number for audit."""
-    with Spinner(f"calling {cfg.model} @ {cfg.url}"):
-        return call(
-            cfg,
-            system=system,
-            user_msgs=user_msgs,
-            log_name=f"init-decompose-r{attempt}",
-            log_dir=default_log_dir(),
-        )
+    return call_json(
+        cfg,
+        system=system,
+        user_msgs=user_msgs,
+        response_schema=schema,
+        log_name=f"init-decompose-r{attempt}",
+        log_dir=default_log_dir(),
+    )
 
 
-def _parse_tasks(yaml_text: str) -> list[dict]:
-    """Parse the LLM's task list YAML and return the `tasks` list.
+def _parse_tasks(response: dict) -> list[dict]:
+    """Pull the `tasks` list from the schema-validated response.
 
-    Accepts the legacy `proposed_tasks:` key too — models occasionally
-    fall back to wording in their training data even when the
-    instruction asks for `tasks:`. Non-dict task entries are skipped.
+    Schema enforces shape upstream — this just unwraps and skips any
+    rows the model still managed to produce malformed.
     """
-    try:
-        data = yaml.safe_load(yaml_text) or {}
-    except yaml.YAMLError:
+    if not isinstance(response, dict):
         return []
-    if not isinstance(data, dict):
-        return []
-    raw = data.get("tasks") or data.get("proposed_tasks") or []
+    raw = response.get("tasks") or []
     return [t for t in raw if isinstance(t, dict)]
 
 
@@ -230,11 +221,11 @@ def _short(text: str, width: int = 80) -> str:
     return first
 
 
-def _summarize(yaml_text: str) -> str:
+def _summarize(response: dict) -> str:
     """Human-readable summary of the proposed task list."""
-    tasks = _parse_tasks(yaml_text)
+    tasks = _parse_tasks(response)
     if not tasks:
-        return "  (could not parse tasks YAML)"
+        return "  (response carries no tasks)"
 
     lines = [f"Proposed plan ({len(tasks)} tasks):"]
     for i, t in enumerate(tasks):

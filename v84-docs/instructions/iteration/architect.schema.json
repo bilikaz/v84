@@ -1,0 +1,90 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["corrections", "rules"],
+  "description": "Architect's raise-half output — cross-role corrections + global rule proposals. Both arrays default empty; silence is allowed. Rejection of lead corrections / lead-raised rules lives in the parallel lead_validate call.",
+  "properties": {
+    "corrections": {
+      "type": "array",
+      "description": "Cross-role corrections — things no single role's lead could see.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["verdict", "correction"],
+        "properties": {
+          "verdict": {
+            "enum": ["fix", "missing", "remove"]
+          },
+          "action_id": {
+            "type": "string",
+            "description": "Required for fix and remove. Role is encoded in the prefix."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Required for missing — the task the new action should belong under."
+          },
+          "for_role": {
+            "type": "string",
+            "description": "Required for missing — the role_tag that should own the new action."
+          },
+          "correction": {
+            "type": "string",
+            "description": "Concise prose (1–3 sentences) stating the break, citing the relevant ids/rules, and naming the change."
+          }
+        }
+      }
+    },
+    "rules": {
+      "type": "array",
+      "description": "Durable global rules.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["proposal"],
+        "properties": {
+          "proposal": {"type": "string"},
+          "alternatives": {
+            "type": "array",
+            "description": "1–3 other viable approaches you considered — genuinely different choices, not rephrasings of the same proposal.",
+            "items": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "title": "Cross-role corrections and / or global rules to add",
+      "example": {
+        "corrections": [
+          {
+            "verdict": "missing",
+            "task_id": "v84-1.2",
+            "for_role": "devops",
+            "correction": "Add a /health endpoint healthcheck so the dev container fails fast when the page is not served."
+          },
+          {
+            "verdict": "fix",
+            "action_id": "v84-1.3.frontend.2",
+            "correction": "Drop the explicit width: 100vw on .canvas; it overrides the responsive sizing the backend service depends on."
+          }
+        ],
+        "rules": [
+          {
+            "proposal": "Static-only deliverables ship with no third-party network requests in the served HTML.",
+            "alternatives": [
+              "Network requests allowed only when the action lists the host as a stack dependency."
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "title": "Nothing crosses role boundaries (iteration is ready as drafted)",
+      "example": {
+        "corrections": [],
+        "rules": []
+      }
+    }
+  ]
+}
