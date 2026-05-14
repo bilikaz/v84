@@ -125,11 +125,12 @@ Smaller sets are normal in that case.
 
 Think as long as you need. Keep the response short.
 
-Respond with a single JSON object with one key: `rules`. The key
-is required; emit an empty array only when prior root globals
-genuinely cover every cross-role concern.
+Respond with a single JSON object with one key: `rules`. Emit
+an empty array only when prior root globals genuinely cover
+every cross-role concern.
 
-`rules` are global rule proposals. Each entry:
+`rules` is an array. Each item is one global rule proposal,
+with these fields:
 
 - `proposal`: the rule wording — the final form you'd enact.
 - `alternatives`: 1 to 3 other viable approaches you considered —

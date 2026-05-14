@@ -132,18 +132,18 @@ def _persist_role_rules(
     role: str,
     rules: list[dict],
 ) -> None:
-    """Append accepted lead-authored rule records to <role>.rules.yaml.
-    Lead is the role's authority — they land as `status: accepted` with
-    `text` set to the proposal."""
+    """Append lead-authored rule records to <role>.rules.yaml as
+    `status: pending`. The architect's `rules_consolidate` pass
+    (after globals settle) makes the final accept / reject call."""
     if not rules:
         spinner.log(
-            f"  ✓ {role}: no rules proposed (empty pack accepted)"
+            f"  ✓ {role}: no rules proposed"
         )
         return
 
     rule_prefix = f"v84-{iteration_n}.{role}.lead.rule"
     existing = proposals.read_rules(project_dir, iteration_n, role)
-    new_records = proposals.to_accepted_rule_records(
+    new_records = proposals.to_pending_rule_records(
         rules,
         id_prefix=rule_prefix,
         start_n=proposals.next_index_for_prefix(existing, rule_prefix),
@@ -157,7 +157,7 @@ def _persist_role_rules(
     )
     spinner.log(
         f"  ✓ {role}.rules.yaml +{len(new_records)} lead-authored "
-        f"(accepted on the spot)"
+        f"(pending architect verdict)"
     )
 
 

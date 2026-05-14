@@ -27,6 +27,11 @@ Override flags:
                            Reads any input from stdin.
     --auto                 Skip all user confirmations. Architect/agent
                            decides. Cycle halts only on hard errors.
+    --llm-set URL [KEY]    Set the single-tier LLM endpoint (and
+                           optionally its Bearer API key). The key is
+                           persisted alongside url/model in profile.yaml
+                           (or the user cache if no profile yet).
+    --llm-set-multi URL [KEY]  Same for the multi tier.
     --reset-llm            Forget cached LLM URL and re-prompt.
     --status               Print project state and exit. No LLM calls.
 """
@@ -77,11 +82,17 @@ def main(argv: list[str] | None = None) -> int:
         # operate on each in turn so a single command can configure both.
         rc = 0
         if args.llm_set is not None:
-            rc = _set_llm_tier(project_dir, "single", args.llm_set)
+            url, key = _split_llm_args(args.llm_set, "--llm-set")
+            if url is False:
+                return 2
+            rc = _set_llm_tier(project_dir, "single", url, key)
             if rc:
                 return rc
         if args.llm_set_multi is not None:
-            rc = _set_llm_tier(project_dir, "multi", args.llm_set_multi)
+            url, key = _split_llm_args(args.llm_set_multi, "--llm-set-multi")
+            if url is False:
+                return 2
+            rc = _set_llm_tier(project_dir, "multi", url, key)
             if rc:
                 return rc
         return 0
@@ -94,20 +105,41 @@ def main(argv: list[str] | None = None) -> int:
     return _run_stages(project_dir, args)
 
 
-def _set_llm_tier(project_dir: Path, tier: str, raw_url: str) -> int:
-    """Re-probe (and optionally swap URL) for one tier, persist, log."""
+def _split_llm_args(values: list[str], flag: str):
+    """Validate the [URL [KEY]] shape from `--llm-set` / `--llm-set-multi`.
+
+    Returns (url_or_None, key_or_None) on success, or (False, None) on
+    too-many-args (caller exits with rc=2).
+    """
+    if len(values) > 2:
+        print(
+            f"ERROR: {flag} takes at most 2 args (URL [KEY]); got {len(values)}",
+            file=sys.stderr,
+        )
+        return False, None
+    url = values[0] if len(values) >= 1 and values[0] else None
+    key = values[1] if len(values) >= 2 and values[1] else None
+    return url, key
+
+
+def _set_llm_tier(
+    project_dir: Path, tier: str, raw_url: Optional[str], raw_key: Optional[str],
+) -> int:
+    """Re-probe (and optionally swap URL/key) for one tier, persist, log."""
     try:
         cfg = resolve_llm(
             project_dir=project_dir,
             tier=tier,
             interactive=sys.stdin.isatty(),
-            force_url=raw_url or None,
+            force_url=raw_url,
+            force_api_key=raw_key,
             force_rescan=True,
         )
     except RuntimeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
-    print(f"✓ llm[{tier}]: {cfg.model} @ {cfg.url}", file=sys.stderr)
+    key_note = " (api_key persisted)" if raw_key else ""
+    print(f"✓ llm[{tier}]: {cfg.model} @ {cfg.url}{key_note}", file=sys.stderr)
     return 0
 
 
@@ -376,20 +408,19 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     p.add_argument(
         "--llm-set",
-        nargs="?",
-        const="",
+        nargs="*",
         default=None,
-        metavar="URL",
-        help="Re-probe the single-tier LLM model and persist. Pass a "
-             "URL to switch endpoints; omit to re-probe the current one. "
-             "Writes to profile.yaml when present, else the user cache.",
+        metavar="URL [KEY]",
+        help="Re-probe the single-tier LLM model and persist. First arg "
+             "is the URL (omit to re-probe the current one); optional "
+             "second arg is the Bearer API key. Writes to profile.yaml "
+             "when present, else the user cache.",
     )
     p.add_argument(
         "--llm-set-multi",
-        nargs="?",
-        const="",
+        nargs="*",
         default=None,
-        metavar="URL",
+        metavar="URL [KEY]",
         help="Same as --llm-set but for the 'multi' tier (used when "
              "2+ agents run concurrently). Both flags can be combined "
              "in a single invocation.",

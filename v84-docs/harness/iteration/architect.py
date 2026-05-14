@@ -141,17 +141,26 @@ def architect(
             "history":                       None,
             "actions":                       "all",
             "corrections":                   "all",
-            "corrections_pending":           None,
+            # Lead-blessed pending corrections (reviewer-source the
+            # lead accepted + lead's own raises) — items to verdict.
+            "corrections_pending":           roles,
             "corrections_rejected":          "all",
             "corrections_applied":           None,
             "corrections_rejected_history":  None,
+            # Already-binding rules (carried from earlier rounds /
+            # promoted at root) — context, may also be voted on.
             "rules":                         ["global"] + roles,
-            "rules_pending":                 None,
+            # Lead-blessed pending rules (reviewer-raised the lead
+            # accepted + lead's own raises this iteration) — items
+            # to verdict.
+            "rules_pending":                 roles,
             "rules_rejected":                ["global"],
             "trailing": (
-                "Vote rejection-only on role-scoped rules that landed "
-                "accepted in this iteration. Silence is the common case — "
-                "leads' authority stands by default."
+                "Render a verdict (accept or reject) on every "
+                "lead-blessed correction and every role-scoped rule "
+                "in scope (pending and already-accepted). Reject "
+                "only with a concrete cross-role break named in "
+                "`reason`."
             ),
         },
     )
@@ -496,12 +505,25 @@ def _apply_lead_rule_verdicts(
         records = proposals.read_rules(project_dir, iteration_n, role)
         accepted_ids: list[str] = []
         rejected_ids: list[str] = []
+        orphan_n = 0
         for r in records:
             rid = r.get("id")
             v = vmap.get(rid)
-            if v is None:
-                continue
             status = r.get("status")
+            if v is None:
+                # Architect must explicitly verdict every pending
+                # rule. Silence on a pending item is treated as
+                # rejection so a missed verdict doesn't silently
+                # bind a rule the architect never blessed. Already-
+                # accepted rules with no verdict stay as is.
+                if status == "pending":
+                    r["status"] = "rejected"
+                    r["rejected_by"] = "architect"
+                    r["rejection_reason"] = "orphan: architect did not vote"
+                    r.pop("text", None)
+                    rejected_ids.append(rid)
+                    orphan_n += 1
+                continue
             verdict = v["verdict"]
             if status == "pending":
                 if verdict == "accept":
@@ -564,7 +586,9 @@ def _apply_lead_rule_verdicts(
         if accepted_ids:
             msg_parts.append(f"{len(accepted_ids)} accepted")
         if rejected_ids:
-            msg_parts.append(f"{len(rejected_ids)} rejected")
+            tail = (f" (incl. {orphan_n} orphan — architect skipped)"
+                    if orphan_n else "")
+            msg_parts.append(f"{len(rejected_ids)} rejected{tail}")
         if msg_parts:
             extra = []
             if synth_added:

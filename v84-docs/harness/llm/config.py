@@ -17,10 +17,17 @@ Resolution order for a tier's URL + model, first-wins:
     3. Interactive prompt          (if a TTY is attached) — single tier only
     4. Raise — no way to resolve
 
-`LLM_API_KEY` (only) is read from the environment because secrets
-shouldn't live in checked-in YAML. URL and model live in profile.yaml
-so the project owns its LLM choice; edit the file or run
-`v84.py --llm-set [URL]` / `--llm-set-multi [URL]`.
+URL, model, and api_key all live together under `llm.<tier>` in
+whichever sink owns the tier (profile.yaml when the project has one,
+else the user cache). Persist via:
+
+    v84.py --llm-set URL [KEY]
+    v84.py --llm-set-multi URL [KEY]
+
+Resolution order for api_key:
+    1. `LLM_API_KEY` env var (one-shot override)
+    2. Persisted `llm.<tier>.api_key`
+    3. None (unauthenticated local LLM)
 
 Once resolved, the URL+model are persisted to whichever sink already
 owns them: profile.yaml when the project has one, otherwise the user
@@ -59,17 +66,20 @@ def resolve_llm(
     tier: str = DEFAULT_TIER,
     interactive: bool = True,
     force_url: Optional[str] = None,
+    force_api_key: Optional[str] = None,
     force_rescan: bool = False,
 ) -> LLMConfig:
     """Return a working LLMConfig for the given tier or raise RuntimeError.
 
-    project_dir   project root (used to find profile.yaml).
-    tier          "single" (default) or "multi". When tier="multi" is
-                  not configured, falls back to "single".
-    interactive   if False, never prompt — used in scripted contexts.
-    force_url     use this URL and re-probe the model. Always written
-                  to the requested tier.
-    force_rescan  re-probe the model from the resolved URL.
+    project_dir    project root (used to find profile.yaml).
+    tier           "single" (default) or "multi". When tier="multi" is
+                   not configured, falls back to "single".
+    interactive    if False, never prompt — used in scripted contexts.
+    force_url      use this URL and re-probe the model. Always written
+                   to the requested tier.
+    force_api_key  store this api_key for the tier (alongside url/model).
+                   `LLM_API_KEY` env var still overrides at call time.
+    force_rescan   re-probe the model from the resolved URL.
     """
     if tier not in TIERS:
         raise ValueError(f"unknown tier {tier!r}; must be one of {TIERS}")
@@ -83,19 +93,31 @@ def resolve_llm(
     )
     cached = _read_cache()
 
-    api_key = os.getenv("LLM_API_KEY")
-
     profile_tier = profile_all.get(tier) or {}
     cached_tier = cached.get(tier) or {}
 
+    # api_key: env wins (one-shot override), then whatever's persisted
+    # for this tier in profile.yaml / user cache, then None.
+    # force_api_key (passed by --llm-set URL KEY) is the value to persist
+    # for the tier — at call time the env still wins over it.
+    api_key = (
+        os.getenv("LLM_API_KEY")
+        or force_api_key
+        or profile_tier.get("api_key")
+        or cached_tier.get("api_key")
+    )
+
     # Multi falls back to single when not yet configured — projects don't
     # need to set up parallel infra until they actually parallelise.
-    if tier == "multi" and not (force_url or profile_tier or cached_tier):
+    if tier == "multi" and not (
+        force_url or force_api_key or profile_tier or cached_tier
+    ):
         return resolve_llm(
             project_dir=project_dir,
             tier="single",
             interactive=interactive,
             force_url=force_url,
+            force_api_key=force_api_key,
             force_rescan=force_rescan,
         )
 
@@ -161,6 +183,8 @@ def resolve_llm(
         "max_concurrency": max_concurrency,
         "retries": retries,
     }
+    if api_key:
+        payload["api_key"] = api_key
     if profile_path and profile_path.exists():
         if profile_tier != payload:
             _write_profile_llm_tier(profile_path, tier, payload)
@@ -263,6 +287,12 @@ def render_llm_block(llm: dict) -> str:
         mc = cfg.get("max_concurrency")
         if mc is not None:
             lines.append(f"    max_concurrency: {mc}")
+        ak = cfg.get("api_key")
+        if ak:
+            # YAML-safe single-quoted scalar so special chars (!, #, :, etc.)
+            # in the key don't get reinterpreted as tags/comments/mappings.
+            escaped = str(ak).replace("'", "''")
+            lines.append(f"    api_key: '{escaped}'")
     return "\n".join(lines)
 
 
@@ -319,15 +349,9 @@ def _write_cache_tier(tier: str, cfg: dict) -> None:
     current = _read_cache()
     current[tier] = cfg
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    lines = [
-        "# v84 LLM bootstrap cache — used until a project profile.yaml exists",
-        "llm:",
-    ]
-    for t in TIERS:
-        c = current.get(t)
-        if not isinstance(c, dict) or not c:
-            continue
-        lines.append(f"  {t}:")
-        lines.append(f"    url: {c['url']}")
-        lines.append(f"    model: {c['model']}")
-    CACHE_FILE.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    body = render_llm_block(current)
+    text = (
+        "# v84 LLM bootstrap cache — used until a project profile.yaml exists\n"
+        + body + "\n"
+    )
+    CACHE_FILE.write_text(text, encoding="utf-8")

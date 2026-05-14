@@ -41,6 +41,12 @@ import urllib.request
 import yaml
 
 
+# Default `Python-urllib/X.Y` gets 403'd by Cloudflare's bot rules on some
+# zones. Send a normal UA so CF-fronted endpoints (e.g. llm.<domain>:2083)
+# don't reject the probe and stream calls.
+_UA = "v84-harness/1.0"
+
+
 # -----------------------------------------------------------------------------
 # Loop detection — kill calls whose `reasoning_content` keeps recycling.
 # -----------------------------------------------------------------------------
@@ -172,7 +178,7 @@ def _probe_models(url: str, api_key: Optional[str]) -> Optional[str]:
     We only need the model id; the rest of the response is ignored.
     """
     endpoint = f"{url.rstrip('/')}/models"
-    headers = {}
+    headers = {"User-Agent": _UA}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
@@ -283,6 +289,7 @@ def _post(
     headers = {
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
+        "User-Agent": _UA,
     }
     if cfg.api_key:
         headers["Authorization"] = f"Bearer {cfg.api_key}"

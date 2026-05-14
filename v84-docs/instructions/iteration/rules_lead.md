@@ -8,8 +8,10 @@ stack-specific best practices, code-organisation rules, anything
 durable that future writers and reviewers should treat as
 settled.
 
-You are the role's authority. Each proposal you raise here is
-accepted on the spot for this role.
+You are the role's authority for proposing role-internal rules.
+Each proposal lands `status: pending` and goes through the
+architect's coherence pass against the iteration's settled
+globals — accepted ones become binding, rejected ones retire.
 
 ## What you receive
 
@@ -111,11 +113,12 @@ Smaller sets are normal in that case.
 
 Think as long as you need. Keep the response short.
 
-Respond with a single JSON object with one key: `rules`. The key
-is required; emit an empty array only when prior root rules
-genuinely cover everything additive your role would propose.
+Respond with a single JSON object with one key: `rules`. Emit an
+empty array only when prior root rules genuinely cover
+everything additive your role would propose.
 
-`rules` are role-scoped rule proposals. Each entry:
+`rules` is an array. Each item is one role-scoped rule
+proposal, with these fields:
 
 - `proposal`: the rule wording — the final form you'd enact.
 - `alternatives`: 1 to 3 other viable approaches you considered —

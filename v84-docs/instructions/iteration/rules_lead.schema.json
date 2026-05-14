@@ -2,7 +2,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["rules"],
-  "description": "Role-scoped rule proposals raised at the start of the iteration, before any actions are drafted. Lead is the role's authority — each proposal is accepted on the spot for this role.",
+  "description": "Role-scoped rule proposals raised at the start of the iteration, before any actions are drafted. Each proposal lands status: pending and goes through the architect's coherence pass — accepted ones become binding, rejected ones retire.",
   "properties": {
     "rules": {
       "type": "array",

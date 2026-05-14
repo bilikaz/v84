@@ -59,14 +59,16 @@ def rules_consolidate(
     if not roles:
         raise RuntimeError("no active roles in profile.yaml")
 
-    # Gather every still-accepted lead rule. (Retired-via-promotes_from
-    # records carry status: superseded and won't appear here.)
+    # Gather every pending lead rule awaiting architect's coherence
+    # verdict. Rules retired earlier this stage via promotes_from
+    # carry status: superseded and won't appear here; rules already
+    # rejected by rules_validate-side drift checks won't either.
     surviving: dict[str, list[dict]] = {}
     total_pending = 0
     for role in roles:
         recs = [
             r for r in proposals.read_rules(project_dir, iteration_n, role)
-            if r.get("status") == "accepted"
+            if r.get("status") == "pending"
         ]
         if recs:
             surviving[role] = recs
@@ -90,16 +92,20 @@ def rules_consolidate(
             "stack":           "all",
             "layout":          ["global"] + roles,
             "role_definition": "all",
-            # Lead packs (per role) + settled globals (already accepted).
+            # Settled globals + any role rules already accepted from
+            # earlier rounds — binding context.
             "rules":           ["global"] + roles,
+            # The pending lead packs from rules_lead — these are the
+            # items the architect must render a verdict on.
+            "rules_pending":   roles,
             "rules_rejected":  ["global"],
             "trailing": (
-                "Vote accept or reject on every role's pending lead "
-                "rules in light of the now-settled globals. Reject "
-                "only when you can name a concrete cause — conflict "
-                "with a settled global, drift vs a root rule, "
-                "subsumption by a settled global, or same-scope "
-                "duplication across roles."
+                "Render a verdict (accept or reject) on every "
+                "pending lead rule listed above, in light of the "
+                "now-settled globals. Reject only when you can name "
+                "a concrete cause — conflict with a settled global, "
+                "drift vs a root rule, subsumption by a settled "
+                "global, or same-scope duplication across roles."
             ),
         },
     )
@@ -143,28 +149,44 @@ def _apply_verdicts_to_roles(
     verdicts: list[dict],
     surviving: dict[str, list[dict]],
 ) -> None:
-    """Walk each role's rules file once. For each verdict whose id
-    matches a record in that role, flip the record's status if
-    verdict=reject (and stamp rejected_by + rejection_reason).
-    Records with no matching verdict OR verdict=accept stay
-    accepted as-is. Orphan verdicts (no matching id) are logged
-    but ignored."""
+    """Walk each role's rules file once. For each pending record:
+      - matching `accept` verdict → status: accepted (final), with
+        `text` set to the record's proposal so downstream consumers
+        (user_rules_review, draft) read a stable canonical wording.
+      - matching `reject` verdict → status: rejected with
+        rejected_by: architect and rejection_reason recorded.
+      - no matching verdict (architect failed to vote on this
+        rule) → status: rejected with reason
+        "orphan: architect did not vote". Architect must
+        explicitly bless every pending rule to make it binding.
+
+    Orphan verdicts (no matching pending id) are logged.
+    """
     by_id: dict[str, dict] = {v["id"]: v for v in verdicts}
     matched: set[str] = set()
 
     for role, _recs in surviving.items():
         records = proposals.read_rules(project_dir, iteration_n, role)
-        accepted_n = rejected_n = 0
+        accepted_n = rejected_n = orphan_n = 0
         for r in records:
-            if r.get("status") != "accepted":
+            if r.get("status") != "pending":
                 continue
             rid = r.get("id")
             v = by_id.get(rid)
             if v is None:
-                accepted_n += 1
+                r["status"] = "rejected"
+                r["rejected_by"] = "architect"
+                r["rejection_reason"] = "orphan: architect did not vote"
+                r.pop("text", None)
+                rejected_n += 1
+                orphan_n += 1
                 continue
             matched.add(rid)
             if v["verdict"] == "accept":
+                r["status"] = "accepted"
+                if not r.get("text"):
+                    r["text"] = (r.get("proposal") or "").strip()
+                r.pop("rejection_reason", None)
                 accepted_n += 1
                 continue
             r["status"] = "rejected"
@@ -174,16 +196,19 @@ def _apply_verdicts_to_roles(
             r.pop("text", None)
             rejected_n += 1
         proposals.write_rules(project_dir, iteration_n, role, records)
-        spinner.log(
+        msg = (
             f"  ✓ {role}.rules.yaml — {accepted_n} accepted, "
             f"{rejected_n} rejected by consolidate"
         )
+        if orphan_n:
+            msg += f" (incl. {orphan_n} orphan — architect skipped)"
+        spinner.log(msg)
 
     orphan = sum(1 for vid in by_id if vid not in matched)
     if orphan:
         spinner.log(
             f"  ✗ {orphan} consolidate verdict(s) had no matching "
-            f"lead rule (orphans, ignored)"
+            f"pending lead rule (orphans, ignored)"
         )
 
 

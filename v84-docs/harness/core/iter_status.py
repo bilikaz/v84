@@ -80,6 +80,7 @@ STEP_CYCLE              = "cycle"
 STEP_ARCHITECT          = "architect"
 STEP_ARCHITECT_VALIDATE = "architect_validate"
 STEP_USER_REVIEW        = "user_review"
+STEP_FINISH             = "finish"
 STEP_DONE_GLOBAL        = "done"
 
 

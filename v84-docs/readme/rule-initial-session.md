@@ -47,10 +47,12 @@ covering:
 
 Each proposal binds to one of: the plan, role definition, stack
 slice, repo layout, or role history. Lead is the role's
-authority — proposals land in
-`iterations/<n>/<role>.rules.yaml` as `status: accepted` with
-`text` set to the proposal. They later face the architect's
-coherence pass in `rules_consolidate`.
+authority for proposing — proposals land in
+`iterations/<n>/<role>.rules.yaml` as `status: pending` and
+later face the architect's coherence pass in
+`rules_consolidate`. Accepted proposals transition to
+`status: accepted` with `text` set to the proposal; rejected
+ones flip to `status: rejected`.
 
 ### rules_architect (cross-role, single call)
 
@@ -94,8 +96,8 @@ Single-veto: any reject → `status: rejected` with `rejected_by:
 
 ### rules_consolidate (single architect call)
 
-After globals settle, the architect votes `accept` or `reject`
-on every surviving lead rule from `rules_lead`. Reject when:
+After globals settle, the architect renders a verdict on every
+pending lead rule from `rules_lead`. Reject when:
 
 - Conflicts with a settled global from this iteration.
 - Conflicts with a root-promoted rule.
@@ -103,9 +105,12 @@ on every surviving lead rule from `rules_lead`. Reject when:
   lead rule's full scope).
 - Same-scope duplicate of another role's lead rule.
 
-Accept = lead rule keeps `status: accepted`. Reject = flips to
-`status: rejected` with `rejected_by: architect` and
-`rejection_reason`.
+Accept transitions a pending lead rule to `status: accepted`
+with `text` set to the proposal (binding from now on). Reject
+flips it to `status: rejected` with `rejected_by: architect`
+and `rejection_reason`. Pending lead rules with no matching
+verdict default to rejection — the architect must explicitly
+bless to make a rule binding.
 
 ### user_rules_review (user gate)
 
@@ -128,8 +133,9 @@ terminal actions through `confirm_modal`:
 
 ```
 iterations/<n>/
-├── <role>.rules.yaml           ← rules_lead writes (status: accepted)
-│                                  rules_consolidate may flip to
+├── <role>.rules.yaml           ← rules_lead writes (status: pending);
+│                                  rules_consolidate transitions
+│                                  pending → accepted (binding) or
 │                                  rejected; promotes_from retirements
 │                                  set status: superseded
 ├── global.rules.yaml            ← rules_architect writes (pending);

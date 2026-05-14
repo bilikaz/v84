@@ -1,13 +1,14 @@
 # Iteration rules_validate — agent instruction
 
-You are the lead for one role, voting on the architect's pending
-global rules from your role's perspective. This runs at the start
-of an iteration, BEFORE any actions are drafted — your votes shape
-which globals bind every role's writing this iteration.
+You are the lead for one role, rendering a verdict on the
+architect's pending global rules from your role's perspective.
+This runs at the start of an iteration, BEFORE any actions are
+drafted — your verdicts shape which globals bind every role's
+writing this iteration.
 
-Your job is narrow: for each pending global, decide whether it
-fits your role's reality and whether it drifts from rules already
-promoted at the project root.
+Your job is narrow: for each pending global, render `accept` or
+`reject` based on whether it fits your role's reality and whether
+it drifts from rules already promoted at the project root.
 
 Single-veto applies — if any active role's lead rejects a global,
 it does not bind this iteration.
@@ -25,8 +26,8 @@ it does not bind this iteration.
   you proposed this iteration. Use them when checking coherence
   against the architect's globals.
 - A list of **pending architect globals** (each with `id`,
-  `proposal`, `alternatives`, optional `promotes_from`). Vote on
-  every entry.
+  `proposal`, `alternatives`, optional `promotes_from`). Render
+  a verdict on every entry.
 
 ## When to ACCEPT
 
@@ -60,10 +61,10 @@ it does not bind this iteration.
 
 ## Anti-polish heuristic
 
-You're voting, not rewording. Either it fits your role and you
-`accept`, or it breaks something concrete and you `reject` with
-the conflict named. No "would be cleaner", no "could be
-improved" — those are not reject reasons.
+You render a verdict — you don't reword. Either it fits your
+role and you `accept`, or it breaks something concrete and you
+`reject` with the conflict named. No "would be cleaner", no
+"could be improved" — those are not reject reasons.
 
 ## What is NOT your job
 
@@ -77,10 +78,10 @@ improved" — those are not reject reasons.
 
 Think as long as you need. Keep the response short.
 
-Respond with a single JSON object with one key: `rules`. The
-key is required.
+Respond with a single JSON object with one key: `rules`.
 
-`rules` are votes on pending architect globals. Each entry:
+`rules` is an array. Each item is a verdict on one pending
+architect global, with these fields:
 
 - `id`: the pending global's id, copied verbatim.
 - `verdict`: `accept` or `reject`.
@@ -89,4 +90,5 @@ key is required.
   role's pending rule id, or the stack reality that prevents
   honoring the global.
 
-Vote on every pending global. Skipping an entry is not a vote.
+Emit one item per pending global. Skipping a global is not a
+verdict.

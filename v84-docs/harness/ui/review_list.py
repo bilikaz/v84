@@ -25,6 +25,7 @@ painter UX rule 10).
 
 from __future__ import annotations
 
+import shutil
 import sys
 import termios
 import tty
@@ -303,38 +304,86 @@ def review_list(
         return ""
 
     def _render_list() -> list[str]:
-        out: list[str] = []
+        # Header (summary + keymap + blank).
+        header: list[str] = []
         if summary:
             for line in summary.splitlines():
-                out.append(f"  {line}")
-            out.append("")
-        out.append(f"  ({_keymap_line()})")
-        out.append("")
+                header.append(f"  {line}")
+            header.append("")
+        header.append(f"  ({_keymap_line()})")
+        header.append("")
 
+        # Scrollable middle: section titles + rows. Track the line
+        # range occupied by the cursor row so the viewport can keep
+        # it visible.
+        scrollable: list[str] = []
+        cursor_first = cursor_last = 0
         for sec_idx, section in enumerate(sections):
             title = section.get("title", "")
             if title:
-                out.append(f"  \033[1m{title}\033[0m")
-                out.append(f"  {'─' * max(4, len(title))}")
-                out.append("")
+                scrollable.append(f"  \033[1m{title}\033[0m")
+                scrollable.append(f"  {'─' * max(4, len(title))}")
+                scrollable.append("")
             rows = section.get("rows") or []
             for row_idx, row in enumerate(rows):
                 is_cursor = (
                     mode in ("list", "bar")
                     and (sec_idx, row_idx) == selectable[list_cursor]
                 )
-                out.extend(_render_row(row, is_cursor=is_cursor))
-                out.append("")
+                row_lines = _render_row(row, is_cursor=is_cursor)
+                if is_cursor:
+                    cursor_first = len(scrollable)
+                    cursor_last = cursor_first + len(row_lines) - 1
+                scrollable.extend(row_lines)
+                scrollable.append("")
 
-        out.append(f"  {_DIVIDER}")
-        out.extend(_render_action_bar(focused=(mode == "bar")))
+        # Footer (divider + action bar + optional status).
+        footer: list[str] = [f"  {_DIVIDER}"]
+        footer.extend(_render_action_bar(focused=(mode == "bar")))
         if status_fn is not None:
             try:
                 line = status_fn(sections)
             except Exception:
                 line = ""
             if line:
-                out.append(f"  {line}")
+                footer.append(f"  {line}")
+
+        # Viewport budget for the scrollable middle. Reserve two
+        # lines for "more above / more below" indicators so they
+        # don't push content off-screen on either side.
+        term_height = shutil.get_terminal_size((80, 30)).lines
+        available = term_height - len(header) - len(footer) - 2
+        if available < 5:
+            available = 5
+
+        if len(scrollable) <= available:
+            return header + scrollable + footer
+
+        # Choose a scroll_top that keeps the cursor visible.
+        max_top = max(0, len(scrollable) - available)
+        scroll_top = max(0, cursor_first - available // 2)
+        scroll_top = min(scroll_top, max_top)
+        if cursor_first < scroll_top:
+            scroll_top = cursor_first
+        elif cursor_last >= scroll_top + available:
+            scroll_top = cursor_last - available + 1
+            scroll_top = min(scroll_top, max_top)
+
+        visible = scrollable[scroll_top : scroll_top + available]
+        above = scroll_top
+        below = max(0, len(scrollable) - scroll_top - available)
+
+        out = list(header)
+        out.append(
+            f"  \033[2m↑ {above} more above\033[0m"
+            if above > 0 else ""
+        )
+        out.extend(visible)
+        out.append(
+            f"  \033[2m↓ {below} more below\033[0m"
+            if below > 0 else ""
+        )
+        out.extend(footer)
         return out
 
     def _render_row(row: dict, *, is_cursor: bool) -> list[str]:

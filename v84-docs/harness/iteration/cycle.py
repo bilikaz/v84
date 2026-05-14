@@ -173,15 +173,17 @@ _POST_CYCLE_STEPS = frozenset({
     iter_status.STEP_ARCHITECT,
     iter_status.STEP_ARCHITECT_VALIDATE,
     iter_status.STEP_USER_REVIEW,
+    iter_status.STEP_FINISH,
     iter_status.STEP_DONE_GLOBAL,
 })
 
 
 def _is_done(project_dir: Path) -> bool:
     """Done when status.yaml's next_step is in a post-cycle phase
-    (architect / validate / user_review / done). Legacy mid-pipeline
-    values (the old draft/review/lead_round/patch) count as not-done
-    so a stale in-flight iteration is picked up by cycle on resume."""
+    (architect / validate / user_review / finish / done). Legacy
+    mid-pipeline values (the old draft/review/lead_round/patch)
+    count as not-done so a stale in-flight iteration is picked up
+    by cycle on resume."""
     data = coreyaml.read(project_dir)
     parent_id = data.get("current_iteration")
     if not parent_id:
